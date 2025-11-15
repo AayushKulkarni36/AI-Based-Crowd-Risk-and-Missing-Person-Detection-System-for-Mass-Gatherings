@@ -28,16 +28,6 @@ This guide provides step-by-step instructions for setting up the AI-Based Crowd 
    npm --version
    ```
 
-**Linux (Ubuntu/Debian):**
-```bash
-curl -fsSL https://deb.nodesource.com/setup_18.x | sudo -E bash -
-sudo apt-get install -y nodejs
-```
-
-**macOS:**
-```bash
-brew install node
-```
 
 #### 2. Python (3.9 or higher)
 
@@ -50,17 +40,6 @@ brew install node
    pip --version
    ```
 
-**Linux:**
-```bash
-sudo apt-get update
-sudo apt-get install python3.9 python3-pip python3-venv
-```
-
-**macOS:**
-```bash
-brew install python@3.9
-```
-
 #### 3. PostgreSQL (15 or higher)
 
 **Windows:**
@@ -69,19 +48,7 @@ brew install python@3.9
 3. Remember the postgres user password you set
 4. PostgreSQL service should start automatically
 
-**Linux (Ubuntu/Debian):**
-```bash
-sudo apt-get update
-sudo apt-get install postgresql postgresql-contrib
-sudo systemctl start postgresql
-sudo systemctl enable postgresql
-```
 
-**macOS:**
-```bash
-brew install postgresql@15
-brew services start postgresql@15
-```
 
 #### 4. PostGIS Extension
 
@@ -89,29 +56,12 @@ brew services start postgresql@15
 - PostGIS is usually included in the PostgreSQL installer
 - Or download from [postgis.net/windows_downloads/](https://postgis.net/windows_downloads/)
 
-**Linux:**
-```bash
-sudo apt-get install postgis postgresql-15-postgis-3
-```
-
-**macOS:**
-```bash
-brew install postgis
-```
 
 #### 5. Git
 
 **Windows:**
 - Download from [git-scm.com](https://git-scm.com/download/win)
 
-**Linux:**
-```bash
-sudo apt-get install git
-```
-
-**macOS:**
-```bash
-brew install git
 ```
 
 ---
@@ -130,10 +80,7 @@ CREATE USER postgres WITH PASSWORD 'your_password';
 ALTER USER postgres CREATEDB;
 ```
 
-**Linux/macOS (command line):**
-```bash
-sudo -u postgres psql
-```
+
 
 Then in psql:
 ```sql
@@ -187,9 +134,9 @@ python scripts/test_postgres_setup.py
 
 Expected output:
 ```
-✅ Database connection successful
-✅ PostGIS extension enabled
-✅ Tables created successfully
+ Database connection successful
+ PostGIS extension enabled
+ Tables created successfully
 ```
 
 ### Step 5: Sample Data (Optional)
@@ -488,6 +435,4 @@ A:
 - [Express.js Documentation](https://expressjs.com/)
 
 ---
-
-**Need more help?** Open an issue on GitHub or contact the project maintainer.
 

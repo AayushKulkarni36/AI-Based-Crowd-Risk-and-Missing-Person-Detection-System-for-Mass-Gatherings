@@ -7,7 +7,7 @@
 
 A comprehensive AI-powered system for real-time crowd monitoring, risk assessment, and missing person detection in mass gathering scenarios. Built with modern web technologies and state-of-the-art computer vision models.
 
-## 🎯 Project Overview
+## Project Overview
 
 This system provides intelligent crowd analysis using YOLOv5 object detection to identify and count people in video feeds, assess crowd density risks, and maintain a registry for missing person cases. The platform features a professional web dashboard for real-time monitoring, video analysis, and data visualization.
 
@@ -21,7 +21,7 @@ This system provides intelligent crowd analysis using YOLOv5 object detection to
 - **Professional UI**: Modern dark-themed React interface with Tailwind CSS
 - **RESTful API**: Node.js/Express backend with PostgreSQL database
 
-## 🛠️ Tech Stack
+##  Tech Stack
 
 ### Frontend
 - **React 18** - Modern UI framework
@@ -52,7 +52,7 @@ This system provides intelligent crowd analysis using YOLOv5 object detection to
 - **Python 3.9+** - AI/ML processing
 - **JavaScript (ES6+)** - Frontend and backend
 
-## 🏗️ System Architecture
+##  System Architecture
 
 ```
 ┌─────────────────┐
@@ -84,7 +84,7 @@ This system provides intelligent crowd analysis using YOLOv5 object detection to
 5. **Database Storage**: Results stored in PostgreSQL database
 6. **Visualization**: Frontend displays results with charts and statistics
 
-## 📋 Prerequisites
+## Prerequisites
 
 Before you begin, ensure you have the following installed:
 
@@ -190,7 +190,7 @@ DB_PASSWORD=your_actual_password
 PORT=5000
 ```
 
-**⚠️ Important**: Never commit `.env` to version control. It contains sensitive credentials.
+**Important**: Never commit `.env` to version control. It contains sensitive credentials.
 
 ### 7. Download YOLO Model (Optional)
 
@@ -201,7 +201,7 @@ The YOLOv5 model will be automatically downloaded on first use by the Ultralytic
 # Or place yolov5s.pt in models/yolo/ directory
 ```
 
-## 🏃 Running the Application
+## Running the Application
 
 ### Start Backend Server
 
@@ -244,7 +244,7 @@ scripts\run_frontend.bat
 scripts\start_all.bat
 ```
 
-## 📁 Project Structure
+## Project Structure
 
 ```
 FinalYearProject/
@@ -296,10 +296,9 @@ FinalYearProject/
 └── README.md               # This file
 ```
 
-## ✨ Features Implemented (Stage 1)
+##  Features Implemented (Stage 1)
 
-### ✅ Core Functionality
-
+###  Core Functionality
 - **Web Dashboard**: Professional dark-themed UI with navigation
 - **Video Analysis**: Upload and process video files for crowd detection
 - **Real-Time Detection**: YOLOv5-based person detection (26+ people detected in tests)
@@ -309,7 +308,7 @@ FinalYearProject/
 - **RESTful API**: Complete backend API with error handling
 - **Database Integration**: PostgreSQL with connection pooling
 
-### 📊 Analytics Features
+###  Analytics Features
 
 - Total people detected
 - Average people per frame
@@ -317,7 +316,7 @@ FinalYearProject/
 - Risk level distribution
 - Time-based statistics
 
-## 🚧 Upcoming Features (Stage 2-3)
+##  Upcoming Features (Stage 2-3)
 
 ### Stage 2
 - [ ] Face recognition for missing person matching
@@ -333,10 +332,7 @@ FinalYearProject/
 - [ ] Historical data analysis
 - [ ] Export functionality (PDF/Excel reports)
 
-## 👥 Team Members
 
-- **Ayush Kulkarni** - Project Lead & Full-Stack Developer
-  - GitHub: [@AayushKulkarni36](https://github.com/AayushKulkarni36)
 
 *Add other team members here*
 
@@ -346,7 +342,7 @@ FinalYearProject/
 - **[Collaboration Guide](docs/COLLABORATION.md)** - Git workflow and team collaboration
 - **[Team Setup](TEAM_SETUP.md)** - Quick onboarding guide for new team members
 
-## 🧪 Testing
+## Testing
 
 ### Test Database Setup
 
@@ -366,7 +362,7 @@ python src/crowd_detection/testSimple.py --video path/to/video.mp4
 curl http://localhost:5000/api/health
 ```
 
-## 🐛 Troubleshooting
+##  Troubleshooting
 
 ### Common Issues
 
@@ -392,11 +388,11 @@ curl http://localhost:5000/api/health
 
 For more detailed troubleshooting, see [docs/SETUP.md](docs/SETUP.md).
 
-## 📝 License
+##  License
 
 This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
 
-## 🤝 Contributing
+## Contributing
 
 1. Fork the repository
 2. Create a feature branch (`git checkout -b feature/AmazingFeature`)
@@ -406,13 +402,13 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 
 See [docs/COLLABORATION.md](docs/COLLABORATION.md) for detailed contribution guidelines.
 
-## 📧 Contact
+##  Contact
 
 For questions, issues, or contributions, please:
 - Open an issue on GitHub
 - Contact the project maintainer
 
-## 🙏 Acknowledgments
+##  Acknowledgments
 
 - [Ultralytics](https://ultralytics.com/) for YOLOv5 implementation
 - [OpenCV](https://opencv.org/) for computer vision tools
@@ -420,5 +416,3 @@ For questions, issues, or contributions, please:
 - All open-source contributors whose libraries made this project possible
 
 ---
-
-**Made with ❤️ for safer mass gatherings**
