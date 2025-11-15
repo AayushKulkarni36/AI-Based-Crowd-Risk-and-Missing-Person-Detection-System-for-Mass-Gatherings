@@ -336,7 +336,7 @@ FinalYearProject/
 
 *Add other team members here*
 
-## 📚 Documentation
+##  Documentation
 
 - **[Setup Guide](docs/SETUP.md)** - Detailed installation and configuration instructions
 - **[Collaboration Guide](docs/COLLABORATION.md)** - Git workflow and team collaboration
