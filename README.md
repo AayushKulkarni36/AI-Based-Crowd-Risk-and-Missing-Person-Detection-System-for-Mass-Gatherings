@@ -94,7 +94,7 @@ Before you begin, ensure you have the following installed:
 - **Git** ([Download](https://git-scm.com/))
 - **npm** or **yarn** (comes with Node.js)
 
-## 🚀 Installation
+##  Installation
 
 ### 1. Clone the Repository
 
