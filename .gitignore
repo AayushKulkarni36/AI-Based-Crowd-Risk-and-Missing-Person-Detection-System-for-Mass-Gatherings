@@ -1,0 +1,203 @@
+# ============================================================================
+# Python
+# ============================================================================
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+env/
+venv/
+.venv/
+ENV/
+build/
+dist/
+*.egg-info/
+.pytest_cache/
+.mypy_cache/
+*.pyd
+
+# ============================================================================
+# Node.js / JavaScript
+# ============================================================================
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+package-lock.json
+# Keep package-lock.json for consistency, but can be regenerated
+# Uncomment if you want to ignore it:
+# package-lock.json
+
+# ============================================================================
+# Build Outputs
+# ============================================================================
+dist/
+build/
+frontend/dist/
+frontend/build/
+backend/dist/
+*.build
+
+# ============================================================================
+# Environment & Secrets
+# ============================================================================
+.env
+.env.local
+.env.production
+.env.development
+*.env
+config/*.secret.js
+*.key
+*.pem
+*.cert
+
+# ============================================================================
+# AI Model Files (Large - can be downloaded separately)
+# ============================================================================
+*.pt
+*.pth
+*.weights
+*.onnx
+yolov5s.pt
+yolov5m.pt
+yolov5l.pt
+yolov5x.pt
+yolov5su.pt
+models/**/*.pt
+models/**/*.onnx
+!models/**/.gitkeep
+
+# ============================================================================
+# Data Files (Large/Temporary)
+# ============================================================================
+data/uploads/*.mp4
+data/uploads/*.avi
+data/uploads/*.mov
+data/results/*.avi
+data/results/*.mp4
+data/results/*.mov
+data/outputs/**/*
+data/test_videos/*.mp4
+data/test_videos/*.avi
+data/test_videos/*.mov
+*.mp4
+*.avi
+*.mov
+*.mkv
+*.flv
+
+# Keep folder structure
+!data/**/.gitkeep
+!data/uploads/.gitkeep
+!data/results/.gitkeep
+!data/outputs/.gitkeep
+!data/test_videos/.gitkeep
+!data/test_images/.gitkeep
+
+# ============================================================================
+# Logs
+# ============================================================================
+*.log
+logs/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+*.log.*
+
+# ============================================================================
+# OS Files
+# ============================================================================
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+desktop.ini
+*.tmp
+*.temp
+
+# ============================================================================
+# IDE / Editor Files
+# ============================================================================
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.project
+.classpath
+.settings/
+*.sublime-project
+*.sublime-workspace
+
+# ============================================================================
+# Backup Files
+# ============================================================================
+*.backup
+*.bak
+*.old
+*_backup/
+*_old/
+*.orig
+
+# ============================================================================
+# Database Files
+# ============================================================================
+*.db
+*.sqlite
+*.sqlite3
+data/*.db
+data/*.sqlite
+
+# ============================================================================
+# Temporary / Development Files
+# ============================================================================
+installed_packages.txt
+cleanup_log_*.txt
+cleanup_backup_list_*.txt
+*.test
+*.spec
+
+# ============================================================================
+# Coverage Reports
+# ============================================================================
+.coverage
+htmlcov/
+.pytest_cache/
+.coverage.*
+
+# ============================================================================
+# Jupyter Notebooks
+# ============================================================================
+.ipynb_checkpoints/
+*.ipynb
+
+# ============================================================================
+# MacOS
+# ============================================================================
+.AppleDouble
+.LSOverride
+Icon
+
+# ============================================================================
+# Windows
+# ============================================================================
+$RECYCLE.BIN/
+*.cab
+*.msi
+*.msix
+*.msm
+*.msp
+*.lnk
+
+# ============================================================================
+# Linux
+# ============================================================================
+*~
+.fuse_hidden*
+.directory
+.Trash-*
+.nfs*
