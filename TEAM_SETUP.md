@@ -2,7 +2,7 @@
 
 Quick onboarding guide for new team members to get the project running locally.
 
-## 🚀 Quick Start Checklist
+##  Quick Start Checklist
 
 - [ ] Prerequisites installed
 - [ ] Repository cloned
@@ -112,7 +112,7 @@ DB_PASSWORD=your_actual_password_here
 PORT=5000
 ```
 
-**⚠️ Important:** Replace `your_actual_password_here` with your PostgreSQL password.
+** Important:** Replace `your_actual_password_here` with your PostgreSQL password.
 
 ---
 
@@ -142,9 +142,9 @@ python scripts/setup_postgres_db.py
 ```
 
 This will:
-- ✅ Create the `missing_persons` database
-- ✅ Enable PostGIS extension
-- ✅ Create necessary tables
+-  Create the `missing_persons` database
+-  Enable PostGIS extension
+-  Create necessary tables
 
 ### Verify Database
 
@@ -154,9 +154,9 @@ python scripts/test_postgres_setup.py
 
 Expected output:
 ```
-✅ Database connection successful
-✅ PostGIS extension enabled
-✅ Tables created successfully
+ Database connection successful
+ PostGIS extension enabled
+ Tables created successfully
 ```
 
 ---
@@ -183,8 +183,8 @@ npm start
 
 You should see:
 ```
-✅ Backend running on http://localhost:5000
-✅ PostgreSQL connected
+ Backend running on http://localhost:5000
+ PostgreSQL connected
 ```
 
 ### Terminal 2: Start Frontend
@@ -251,7 +251,7 @@ Expected response:
 
 ---
 
-## ✅ Verification Checklist
+##  Verification Checklist
 
 Before you start coding, verify:
 
@@ -265,7 +265,7 @@ Before you start coding, verify:
 
 ---
 
-## 🐛 Troubleshooting
+##  Troubleshooting
 
 ### Backend won't start
 
@@ -305,7 +305,7 @@ Before you start coding, verify:
 
 ---
 
-## 📚 Next Steps
+##  Next Steps
 
 1. **Read Documentation**
    - [README.md](README.md) - Project overview
@@ -336,15 +336,11 @@ Before you start coding, verify:
 
 ---
 
-## 🆘 Need Help?
+##  Need Help?
 
 - **Documentation**: Check [docs/](docs/) folder
-- **Issues**: Open an issue on GitHub
-- **Questions**: Contact team lead or project maintainer
+
 
 ---
 
-## 🎉 Welcome to the Team!
-
-You're all set! Happy coding! 🚀
 

@@ -21,7 +21,7 @@ This system provides intelligent crowd analysis using YOLOv5 object detection to
 - **Professional UI**: Modern dark-themed React interface with Tailwind CSS
 - **RESTful API**: Node.js/Express backend with PostgreSQL database
 
-## 🛠️ Tech Stack
+##  Tech Stack
 
 ### Frontend
 - **React 18** - Modern UI framework
@@ -300,6 +300,7 @@ FinalYearProject/
 
 ###  Core Functionality
 
+###  Core Functionality
 - **Web Dashboard**: Professional dark-themed UI with navigation
 - **Video Analysis**: Upload and process video files for crowd detection
 - **Real-Time Detection**: YOLOv5-based person detection (26+ people detected in tests)
@@ -309,7 +310,7 @@ FinalYearProject/
 - **RESTful API**: Complete backend API with error handling
 - **Database Integration**: PostgreSQL with connection pooling
 
-### 📊 Analytics Features
+###  Analytics Features
 
 - Total people detected
 - Average people per frame
@@ -361,7 +362,7 @@ python src/crowd_detection/testSimple.py --video path/to/video.mp4
 curl http://localhost:5000/api/health
 ```
 
-## 🐛 Troubleshooting
+##  Troubleshooting
 
 ### Common Issues
 
@@ -411,5 +412,3 @@ See [docs/COLLABORATION.md](docs/COLLABORATION.md) for detailed contribution gui
 - All open-source contributors whose libraries made this project possible
 
 ---
-
-**Made with ❤️ for safer mass gatherings**
