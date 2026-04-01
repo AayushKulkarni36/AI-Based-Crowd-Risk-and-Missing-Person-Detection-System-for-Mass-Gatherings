@@ -6,7 +6,8 @@ const INITIAL_STATE = {
   gender: '',
   description: '',
   last_seen_location: '',
-  contact_info: ''
+  contact_info: '',
+  photo: null
 };
 
 export default function PersonForm({ onSubmit }) {
@@ -14,8 +15,12 @@ export default function PersonForm({ onSubmit }) {
   const [submitting, setSubmitting] = useState(false);
 
   const handleChange = (event) => {
-    const { name, value } = event.target;
-    setFormValues((prev) => ({ ...prev, [name]: value }));
+    const { name, value, files } = event.target;
+    if (name === 'photo') {
+      setFormValues((prev) => ({ ...prev, photo: files[0] }));
+    } else {
+      setFormValues((prev) => ({ ...prev, [name]: value }));
+    }
   };
 
   const handleSubmit = async (event) => {
@@ -23,11 +28,21 @@ export default function PersonForm({ onSubmit }) {
     setSubmitting(true);
 
     try {
-      await onSubmit?.({
-        ...formValues,
-        age: formValues.age ? Number(formValues.age) : null
-      });
+      const dbFormData = new FormData();
+      dbFormData.append('name', formValues.name);
+      dbFormData.append('age', formValues.age || 0);
+      dbFormData.append('gender', formValues.gender);
+      dbFormData.append('description', formValues.description);
+      if (formValues.photo) {
+        dbFormData.append('photo', formValues.photo);
+      }
+
+      await onSubmit?.(dbFormData);
       setFormValues(INITIAL_STATE);
+      // Reset file input manually if needed
+      if (document.getElementById('photo-upload')) {
+        document.getElementById('photo-upload').value = '';
+      }
     } catch (error) {
       console.error('Failed to submit person form', error);
     } finally {
@@ -102,6 +117,21 @@ export default function PersonForm({ onSubmit }) {
             placeholder="City square, Gate 3"
           />
         </div>
+      </div>
+
+      <div className="space-y-2">
+        <label className="text-slate-300 text-sm font-medium" htmlFor="photo-upload">
+          Reference Photo (Required)
+        </label>
+        <input
+          id="photo-upload"
+          name="photo"
+          type="file"
+          accept="image/*"
+          required
+          onChange={handleChange}
+          className="block w-full text-slate-400 file:mr-4 file:py-2 file:px-4 file:rounded-lg file:border-0 file:text-sm file:font-semibold file:bg-blue-600 file:text-white hover:file:bg-blue-700 cursor-pointer"
+        />
       </div>
 
       <div className="space-y-2">

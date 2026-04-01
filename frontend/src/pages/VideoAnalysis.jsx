@@ -10,6 +10,7 @@ export default function VideoAnalysis() {
   const [results, setResults] = useState(null);
   const [error, setError] = useState(null);
   const [dragActive, setDragActive] = useState(false);
+  const [foundAlerts, setFoundAlerts] = useState([]);
   const pollingRef = useRef(null);
 
   const resetPolling = () => {
@@ -53,40 +54,50 @@ export default function VideoAnalysis() {
     setProcessing(false);
     setError(null);
     setResults(null);
+    setFoundAlerts([]);
 
     try {
       const formData = new FormData();
       formData.append('video', file);
 
       const { data } = await api.uploadVideo(formData);
-      const videoId = data.videoId;
+      const videoId = data.video_id; // Python returns snake_case 'video_id'
 
       setUploading(false);
       setProcessing(true);
 
-      await api.processVideo(videoId);
-
       pollingRef.current = setInterval(async () => {
         try {
           const res = await api.getVideoResults(videoId);
+          const statusData = res.data;
 
-          if (res.data.status === 'completed') {
-            setResults(res.data.results);
+          // Check for alerts
+          if (statusData.found_persons && statusData.found_persons.length > 0) {
+            const newNames = statusData.found_persons.map(p => p.name);
+            setFoundAlerts(prev => [...new Set([...prev, ...newNames])]);
+          }
+
+          if (statusData.status === 'done') {
+            console.log('=== PROCESSING COMPLETE ===', statusData);
+            setResults({
+              totalPeople: "N/A", // Backend doesn't compute aggregate stats yet
+              avgDensity: 0,
+              riskLevel: "SAFE",
+              processedVideo: statusData.download_url
+            });
             setProcessing(false);
             resetPolling();
-          } else if (res.data.status === 'failed') {
-            setError('Processing failed: ' + res.data.error);
+          } else if (statusData.status === 'failed') {
+            setError('Processing failed: ' + statusData.error);
             setProcessing(false);
             resetPolling();
           }
         } catch (pollError) {
           console.error('Error polling results:', pollError);
-          setError('Unable to retrieve processing status.');
-          setProcessing(false);
-          resetPolling();
         }
       }, 2000);
     } catch (err) {
+      console.error(err);
       setError(err.response?.data?.error || 'Upload failed');
       setUploading(false);
       setProcessing(false);
@@ -104,6 +115,19 @@ export default function VideoAnalysis() {
   };
 
   useEffect(() => () => resetPolling(), []);
+
+  useEffect(() => {
+    if (results) {
+      console.log('=== FRONTEND: Results State Updated ===');
+      console.log('Current Results State:', results);
+      console.log('FPS Fields in State:', {
+        averageFPS: results.averageFPS,
+        minFPS: results.minFPS,
+        maxFPS: results.maxFPS,
+        fpsRating: results.fpsRating
+      });
+    }
+  }, [results]);
 
   const getRiskConfig = (level) => {
     const configs = {
@@ -213,6 +237,19 @@ export default function VideoAnalysis() {
         </div>
       )}
 
+      {/* Found Persons Alert */}
+      {foundAlerts.length > 0 && (
+        <div className="premium-card p-6 bg-red-500/20 border-red-500 animate-pulse">
+          <h3 className="text-xl font-bold text-red-500 flex items-center mb-2">
+            <AlertTriangle className="w-6 h-6 mr-2" />
+            MISSING PERSON DETECTED!
+          </h3>
+          <p className="text-white text-lg">
+            Identity Matched: <span className="font-bold">{foundAlerts.join(", ")}</span>
+          </p>
+        </div>
+      )}
+
       {/* Error Display */}
       {error && (
         <div className="premium-card p-6 bg-red-500/10 border-red-500/50">
@@ -279,6 +316,64 @@ export default function VideoAnalysis() {
             </div>
           </div>
 
+          {/* Performance Metrics Card */}
+          {results && (
+            <div className="premium-card p-6">
+              <h3 className="text-xl font-bold text-white mb-4 flex items-center space-x-2">
+                <div className="w-8 h-8 bg-blue-600 rounded-lg flex items-center justify-center">
+                  <TrendingUp className="w-5 h-5 text-white" />
+                </div>
+                <span>Performance Metrics</span>
+              </h3>
+              <div className="grid grid-cols-2 gap-4">
+                {/* Average FPS */}
+                <div className="p-4 bg-slate-900/50 rounded-lg border border-slate-800">
+                  <p className="text-slate-400 text-sm mb-1">Average FPS</p>
+                  <p className="text-3xl font-bold text-white">
+                    {results.averageFPS !== undefined && results.averageFPS !== null
+                      ? Number(results.averageFPS).toFixed(1)
+                      : 'N/A'}
+                  </p>
+                  <p className="text-sm text-slate-500 mt-1">frames per second</p>
+                </div>
+
+                {/* Performance Rating */}
+                <div className="p-4 bg-slate-900/50 rounded-lg border border-slate-800">
+                  <p className="text-slate-400 text-sm mb-1">Performance Rating</p>
+                  <p
+                    className={`text-lg font-semibold ${results.averageFPS >= 20
+                      ? 'text-green-400'
+                      : results.averageFPS >= 15
+                        ? 'text-yellow-400'
+                        : results.averageFPS >= 10
+                          ? 'text-orange-400'
+                          : 'text-red-400'
+                      }`}
+                  >
+                    {results.fpsRating || 'N/A'}
+                  </p>
+                </div>
+              </div>
+
+              {/* FPS Range */}
+              <div className="mt-3 text-sm text-slate-400">
+                FPS Range:{' '}
+                {results.minFPS !== undefined && results.minFPS !== null
+                  ? Number(results.minFPS).toFixed(1)
+                  : 'N/A'}{' '}
+                -{' '}
+                {results.maxFPS !== undefined && results.maxFPS !== null
+                  ? Number(results.maxFPS).toFixed(1)
+                  : 'N/A'}
+              </div>
+
+              {/* Debug Info (Remove after testing) */}
+              <div className="mt-3 p-2 bg-slate-800/50 rounded text-xs text-slate-500">
+                Debug: avgFPS={JSON.stringify(results.averageFPS)} | rating={JSON.stringify(results.fpsRating)}
+              </div>
+            </div>
+          )}
+
           {/* Recommendations */}
           <div className="premium-card p-8">
             <h3 className="text-xl font-bold text-white mb-6 flex items-center space-x-2">
@@ -303,7 +398,7 @@ export default function VideoAnalysis() {
               <div className="flex items-center justify-between mb-6">
                 <h3 className="text-xl font-bold text-white">Processed Video</h3>
                 <a
-                  href={`http://localhost:5000${results.processedVideo}`}
+                  href={`http://localhost:8000${results.processedVideo}`}
                   download
                   className="btn-secondary flex items-center space-x-2"
                 >
@@ -314,7 +409,7 @@ export default function VideoAnalysis() {
               <video
                 className="w-full rounded-xl bg-slate-900"
                 controls
-                src={`http://localhost:5000${results.processedVideo}`}
+                src={`http://localhost:8000${results.processedVideo}`}
               />
             </div>
           )}

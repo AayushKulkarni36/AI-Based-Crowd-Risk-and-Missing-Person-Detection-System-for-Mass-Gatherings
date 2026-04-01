@@ -64,6 +64,10 @@ export async function processVideo(req, res, next) {
       const totalFrames = Number(results.totalFrames || 0);
       const capacity = Number(process.env.CROWD_CAPACITY || 40);
       const occupancy = capacity > 0 ? (avgPeople / capacity) * 100 : 0;
+      const averageFPS = parseFloat(results.averageFPS ?? 0) || 0;
+      const minFPS = parseFloat(results.minFPS ?? 0) || 0;
+      const maxFPS = parseFloat(results.maxFPS ?? 0) || 0;
+      const fpsRating = results.fpsRating || 'N/A';
 
       job.status = 'completed';
       job.completedAt = new Date().toISOString();
@@ -74,7 +78,11 @@ export async function processVideo(req, res, next) {
         riskLevel: calculateRisk(occupancy),
         occupancy: occupancy.toFixed(1),
         processedVideo: `/results/result_${videoId}.avi`,
-        suggestions: getSuggestions(occupancy)
+        suggestions: getSuggestions(occupancy),
+        averageFPS,
+        minFPS,
+        maxFPS,
+        fpsRating
       };
     } catch (error) {
       job.status = 'failed';
@@ -94,6 +102,43 @@ export async function getResults(req, res, next) {
 
     if (!job) {
       return res.status(404).json({ success: false, error: 'Video not found' });
+    }
+
+    if (job.status === 'completed' && job.results) {
+      console.log('=== BACKEND: Sending to Frontend ===');
+      console.log('Job Status:', job.status);
+      console.log('Full Results Object:', job.results);
+      console.log('FPS Values:', {
+        averageFPS: job.results.averageFPS,
+        minFPS: job.results.minFPS,
+        maxFPS: job.results.maxFPS,
+        fpsRating: job.results.fpsRating
+      });
+      console.log('Data Types:', {
+        averageFPS: typeof job.results.averageFPS,
+        minFPS: typeof job.results.minFPS,
+        maxFPS: typeof job.results.maxFPS
+      });
+    }
+
+    if (job.status === 'completed' && job.results) {
+      return res.json({
+        status: job.status,
+        results: {
+          totalPeople: job.results.totalPeople,
+          avgPeoplePerFrame: job.results.avgDensity,
+          totalFrames: job.results.totalFrames,
+          maxPeople: job.results.totalPeople,
+          riskLevel: job.results.riskLevel,
+          averageFPS: job.results.averageFPS,
+          minFPS: job.results.minFPS,
+          maxFPS: job.results.maxFPS,
+          fpsRating: job.results.fpsRating,
+          processedVideo: job.results.processedVideo,
+          suggestions: job.results.suggestions,
+          occupancy: job.results.occupancy
+        }
+      });
     }
 
     return res.json(job);

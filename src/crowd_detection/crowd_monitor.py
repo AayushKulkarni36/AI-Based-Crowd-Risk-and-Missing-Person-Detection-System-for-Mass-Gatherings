@@ -62,6 +62,18 @@ class CrowdMonitor:
         self.skip_counter = 0
         
         print("[INFO] CrowdMonitor initialized successfully")
+
+    def get_density(self, frame: np.ndarray) -> float:
+        """
+        Get crowd density (person count) from a single frame.
+        Used by external modules (e.g. face_recognition).
+        """
+        if self.detector is None:
+            return 0.0
+            
+        _, person_count = self.detector.detect_persons(frame)
+        # In this system, density is proxied by person count for now
+        return float(person_count)
     
     def _init_voice_engine(self):
         """Initialize text-to-speech engine"""

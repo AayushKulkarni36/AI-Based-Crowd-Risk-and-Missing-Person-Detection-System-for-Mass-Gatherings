@@ -1,0 +1,19 @@
+Cleanup Log - 2026-02-05
+
+Removed Files:
+- demo_final.py
+- app_crowd.py
+- run_final_demo.bat
+- test_db.py
+- scripts/activate_and_run.bat
+- scripts/install_deps.bat
+- scripts/run_backend.bat
+- scripts/run_frontend.bat
+- scripts/start_all.bat
+- scripts/view_database.py
+- scripts/check_venv.py
+
+Reason: Removing unused demo files and launchers to produce a clean, production-ready repository structure as per instructions.
+
+Removed Data:
+- All contents of data/processed/ (stale output files)

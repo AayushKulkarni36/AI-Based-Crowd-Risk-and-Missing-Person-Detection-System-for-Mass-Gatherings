@@ -1,0 +1,31 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer components {
+    .btn-primary {
+        @apply px-4 py-2 bg-brand-accent hover:bg-sky-500 text-slate-900 rounded-lg transition-all duration-300 font-semibold disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2 shadow-lg shadow-brand-accent/20 hover:shadow-brand-accent/40;
+    }
+
+    .btn-secondary {
+        @apply px-4 py-2 bg-brand-secondary hover:bg-slate-700 text-white rounded-lg transition-all duration-200 font-medium disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2 border border-slate-700;
+    }
+
+    .input-field {
+        @apply w-full px-4 py-2 bg-brand-secondary border border-slate-700 rounded-lg text-white focus:outline-none focus:ring-2 focus:ring-brand-accent focus:border-transparent transition-all placeholder-slate-400;
+    }
+
+    .card {
+        @apply bg-brand-primary border border-slate-800 rounded-xl p-6 shadow-xl hover:border-slate-700 transition-all duration-300;
+    }
+
+    .glass-nav {
+        @apply bg-brand-surface/90 backdrop-blur-md border-b border-slate-800;
+    }
+}
+
+body {
+    background-color: #020617;
+    /* brand-surface */
+    /* Removed gradients for a clean, professional single-color look per request */
+}

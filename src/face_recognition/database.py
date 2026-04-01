@@ -115,6 +115,7 @@ class MissingPersonDB:
                         reported_date TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
                         last_seen_location TEXT,
                         contact_info TEXT,
+                        found_timestamp TIMESTAMPTZ,
                         status TEXT DEFAULT 'ACTIVE'
                     )
                 ''')
@@ -237,6 +238,25 @@ class MissingPersonDB:
                 ''', (status, person_id))
                 conn.commit()
                 logger.info(f"[INFO] Updated person {person_id} status to: {status}")
+
+    def mark_person_found(self, person_id: int) -> None:
+        """
+        Mark a missing person as FOUND and set found_timestamp.
+        This is called when a high-confidence similarity match is detected.
+        """
+        with self._get_conn() as conn:
+            with conn.cursor() as cur:
+                # Idempotent update: only update if not already FOUND
+                cur.execute(
+                    """
+                    UPDATE missing_persons
+                    SET status = 'FOUND',
+                        found_timestamp = NOW()
+                    WHERE id = %s AND status != 'FOUND'
+                    """,
+                    (person_id,),
+                )
+            conn.commit()
 
     def get_statistics(self) -> Dict[str, Any]:
         """Get database statistics."""

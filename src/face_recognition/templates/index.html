@@ -1,0 +1,76 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+  <meta charset="UTF-8" />
+  <title>Mass Gathering Surveillance System</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}" />
+</head>
+
+<body>
+  <div class="container">
+    <h1>Mass Gathering Surveillance System</h1>
+    <p class="subtitle">
+      Crowd risk analysis and <strong>face similarity–based missing person identification</strong>.
+    </p>
+
+    <section class="panel">
+      <h2>Register Missing Person</h2>
+      <form id="registerForm">
+        <div class="field">
+          <label for="name">Name</label>
+          <input id="name" name="name" type="text" required />
+        </div>
+        <div class="field-group">
+          <div class="field">
+            <label for="age">Age</label>
+            <input id="age" name="age" type="number" min="0" />
+          </div>
+          <div class="field">
+            <label for="gender">Gender</label>
+            <input id="gender" name="gender" type="text" />
+          </div>
+        </div>
+        <div class="field">
+          <label for="description">Description</label>
+          <textarea id="description" name="description" rows="2"></textarea>
+        </div>
+        <div class="field">
+          <label for="photo">Face Photo</label>
+          <input id="photo" name="photo" type="file" accept="image/*" required />
+        </div>
+        <button type="submit">Register with Face Embedding</button>
+        <div id="register-status" class="status"></div>
+      </form>
+    </section>
+
+    <section class="panel">
+      <h2>Upload CCTV Video</h2>
+      <form id="video-form">
+        <div class="field">
+          <label for="video">CCTV Video</label>
+          <input id="video" name="video" type="file" accept="video/*" required />
+        </div>
+        <button type="submit">Process Video</button>
+        <div id="video-status" class="status"></div>
+      </form>
+
+      <div id="video-output" class="video-output hidden">
+        <h3>Processed Video</h3>
+        <video id="resultVideo" controls></video>
+        <p class="note">
+          Overlays show bounding boxes, names for high-confidence similarity matches,
+          similarity percentages, risk levels, crowd density, FPS, and a heatmap.
+        </p>
+        <a id="downloadBtn" href="#" download style="display:none; margin-top:10px;" class="btn btn-success">
+          Download Processed Video
+        </a>
+        <p id="statusText" style="margin-top:8px;"></p>
+      </div>
+    </section>
+  </div>
+
+  <script src="{{ url_for('static', filename='app.js') }}"></script>
+</body>
+
+</html>

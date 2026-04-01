@@ -1,21 +1,26 @@
 import axios from 'axios';
 
 const API = axios.create({
-  baseURL: 'http://localhost:5000/api'
+  baseURL: 'http://localhost:8000'
 });
 
 export const api = {
-  uploadVideo: (formData) => API.post('/video/upload', formData, {
+  // Video Analysis
+  uploadVideo: (formData) => API.post('/upload_video', formData, {
     headers: { 'Content-Type': 'multipart/form-data' }
   }),
-  processVideo: (videoId) => API.post(`/video/process/${videoId}`),
-  getVideoResults: (videoId) => API.get(`/video/results/${videoId}`),
+  processVideo: (videoId) => Promise.resolve({ data: { message: "Started" } }), // Auto-started on upload
+  getVideoResults: (videoId) => API.get(`/status/${videoId}`),
 
-  getAllPersons: () => API.get('/persons'),
-  addPerson: (data) => API.post('/persons', data),
-  updatePerson: (id, data) => API.put(`/persons/${id}`, data),
-  deletePerson: (id) => API.delete(`/persons/${id}`),
+  // Missing Persons
+  getAllPersons: () => API.get('/missing_persons'),
+  addPerson: (formData) => API.post('/register_missing_person', formData, {
+    headers: { 'Content-Type': 'multipart/form-data' }
+  }),
 
-  getOverview: () => API.get('/stats/overview'),
-  getAlerts: () => API.get('/stats/alerts')
+  // Stubs
+  updatePerson: (id, data) => Promise.resolve(),
+  deletePerson: (id) => Promise.resolve(),
+  getOverview: () => Promise.resolve({ data: {} }),
+  getAlerts: () => Promise.resolve({ data: [] })
 };

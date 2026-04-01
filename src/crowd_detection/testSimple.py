@@ -3,6 +3,8 @@ import argparse
 import json
 import logging
 import sys
+import time
+from collections import deque
 from pathlib import Path
 from typing import Union
 import cv2
@@ -65,12 +67,19 @@ def run_detection(args: argparse.Namespace) -> dict:
     frame_count = 0
     cumulative_people = 0
     max_people = 0
+    fps_history = deque(maxlen=30)
+    frame_times: list[float] = []
+    min_fps = float('inf')
+    max_fps = 0.0
+    fps_rating = "Unknown"
+    overall_rating = "Unknown"
     try:
         window_name = 'YOLOv5 Crowd Detection'
         if args.display:
             cv2.namedWindow(window_name, cv2.WINDOW_NORMAL)
             cv2.setWindowProperty(window_name, cv2.WND_PROP_AUTOSIZE, 1)
         while True:
+            frame_start_time = time.time()
             ret, frame = cap.read()
             if not ret:
                 LOGGER.info("End of stream reached.")
@@ -85,6 +94,34 @@ def run_detection(args: argparse.Namespace) -> dict:
             max_people = max(max_people, person_count)
             cv2.putText(annotated_frame, f"Persons: {person_count}", (20, 60), cv2.FONT_HERSHEY_SIMPLEX, 1.5, (0, 255, 0), 4)
             cv2.putText(annotated_frame, f"Frame: {frame_count}", (20, 120), cv2.FONT_HERSHEY_SIMPLEX, 1.0, (255, 255, 255), 3)
+
+            frame_end_time = time.time()
+            frame_time = frame_end_time - frame_start_time
+            current_fps = 0.0
+            if frame_time > 0:
+                current_fps = 1.0 / frame_time
+                fps_history.append(current_fps)
+                frame_times.append(frame_time)
+
+            min_fps = min(min_fps, current_fps) if frame_count > 0 else min_fps
+            max_fps = max(max_fps, current_fps)
+            avg_fps = sum(fps_history) / len(fps_history) if fps_history else 0.0
+
+            if avg_fps >= 20:
+                fps_color = (0, 255, 0)
+                fps_rating = "Excellent"
+            elif avg_fps >= 15:
+                fps_color = (0, 255, 255)
+                fps_rating = "Good"
+            elif avg_fps >= 10:
+                fps_color = (0, 165, 255)
+                fps_rating = "Acceptable"
+            else:
+                fps_color = (0, 0, 255)
+                fps_rating = "Poor"
+
+            if frame_count % 30 == 0:
+                LOGGER.info("Frame %s: FPS=%.1f, Rating=%s", frame_count, avg_fps, fps_rating)
             if writer:
                 writer.write(annotated_frame)
             if args.display:
@@ -103,12 +140,44 @@ def run_detection(args: argparse.Namespace) -> dict:
     LOGGER.info("Processed %s frames", frame_count)
     LOGGER.info("Average people per frame: %.2f", avg_people)
     LOGGER.info("Maximum people detected: %s", max_people)
+    # Calculate final FPS metrics with proper error handling
+    if frame_times and len(frame_times) > 0:
+        overall_avg_fps = len(frame_times) / sum(frame_times)
+        overall_min_fps = min_fps if min_fps != float('inf') else 0.0
+        overall_max_fps = max_fps if max_fps != 0 else 0.0
+    else:
+        overall_avg_fps = 0.0
+        overall_min_fps = 0.0
+        overall_max_fps = 0.0
+
+    # Determine overall rating
+    if overall_avg_fps >= 25:
+        overall_rating = "Excellent (Professional)"
+    elif overall_avg_fps >= 20:
+        overall_rating = "Very Good"
+    elif overall_avg_fps >= 15:
+        overall_rating = "Good"
+    elif overall_avg_fps >= 10:
+        overall_rating = "Acceptable"
+    else:
+        overall_rating = "Poor"
+
+    # Log final metrics
+    LOGGER.info("=== PYTHON: Final FPS Metrics ===")
+    LOGGER.info(f"Average FPS: {overall_avg_fps:.2f}")
+    LOGGER.info(f"Min FPS: {overall_min_fps:.2f}")
+    LOGGER.info(f"Max FPS: {overall_max_fps:.2f}")
+    LOGGER.info(f"FPS Rating: {overall_rating}")
     return {
-        'totalPeople': max_people,
-        'avgPeoplePerFrame': round(avg_people, 2),
-        'totalFrames': frame_count,
-        'maxPeople': max_people,
-        'riskLevel': risk_level
+        'totalPeople': int(max_people),
+        'avgPeoplePerFrame': float(round(avg_people, 2)),
+        'totalFrames': int(frame_count),
+        'maxPeople': int(max_people),
+        'riskLevel': str(risk_level),
+        'averageFPS': float(round(overall_avg_fps, 2)),
+        'minFPS': float(round(overall_min_fps, 2)),
+        'maxFPS': float(round(overall_max_fps, 2)),
+        'fpsRating': str(overall_rating)
     }
 
 def main() -> int:
@@ -131,6 +200,10 @@ def main() -> int:
         print(f"Average people per frame: {results['avgPeoplePerFrame']:.2f}")
         print(f"Maximum people in a frame: {results['maxPeople']}")
         print(f"Risk level: {results['riskLevel']}")
+        print(f"\n=== Performance Metrics ===")
+        print(f"Average FPS: {results['averageFPS']:.2f}")
+        print(f"FPS Range: {results['minFPS']:.1f} - {results['maxFPS']:.1f}")
+        print(f"Performance Rating: {results['fpsRating']}")
     return 0
 
 if __name__ == '__main__':
