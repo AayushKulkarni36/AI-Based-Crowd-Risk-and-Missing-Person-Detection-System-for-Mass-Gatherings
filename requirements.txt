@@ -20,12 +20,27 @@ networkx==3.5
 sympy==1.14.0
 typing-extensions==4.15.0
 
+# Face Recognition (NEW)
+insightface==0.7.3
+onnxruntime==1.19.2
+
+# Vector Search (NEW)
+faiss-cpu==1.8.0
+pgvector==0.3.1
+
 # Database & configuration
 psycopg2-binary==2.9.11
+asyncpg==0.30.0
 SQLAlchemy==2.0.44
 python-dotenv==1.2.1
 
-# Web API
+# Web API - FastAPI (NEW - replaces Flask)
+fastapi==0.110.1
+uvicorn[standard]==0.27.0
+pydantic==2.6.4
+pydantic-settings==2.1.0
+
+# Web API - Legacy Flask (keeping for compatibility)
 Flask==3.1.2
 Flask-Cors==6.0.1
 requests==2.32.5
@@ -57,11 +72,38 @@ pypiwin32==223
 pywin32==311
 comtypes==1.4.13
 
-# Face recognition
+# Face recognition (legacy - can be deprecated once InsightFace validates)
 facenet-pytorch==2.5.3
 
-# 6 FEB YOLOv8 + FaceNet standalone demo notes:
-# - ultralytics is already pinned above
-# - facenet-pytorch is pinned here
-# - for CUDA builds you can install PyTorch from:
-#   https://download.pytorch.org/whl/cu121
+# Testing & development (NEW)
+pytest==7.4.4
+pytest-asyncio==0.23.2
+
+# ============================================================================
+# INSTALLATION NOTES
+# ============================================================================
+# For CUDA 11.8 (RTX 3050 Ti):
+#
+# 1. InsightFace + ONNX Runtime GPU:
+#    pip install insightface onnxruntime-gpu
+#
+# 2. FAISS with GPU support:
+#    pip install faiss-gpu  (requires CUDA toolkit 11.8)
+#
+# 3. If FAISS GPU fails, fall back to CPU:
+#    pip install faiss-cpu
+#
+# 4. PyTorch (torch/torchvision already pinned in this file)
+#    Already acquired from torch 2.9.0 build for CUDA 12.1
+#    To use CUDA 11.8: pip install torch torchvision --index-url https://download.pytorch.org/whl/cu118
+#
+# 5. Async PostgreSQL:
+#    pip install asyncpg psycopg2-binary pgvector
+#
+# 6. FastAPI + Uvicorn:
+#    pip install fastapi[all] uvicorn[standard]
+#
+# 7. Test installation:
+#    python -c "import insightface; print(insightface.__version__)"
+#    python -c "import faiss; print(f'FAISS GPU: {faiss.get_num_gpus() > 0}')"
+#    python -c "import torch; print(f'CUDA available: {torch.cuda.is_available()}')"

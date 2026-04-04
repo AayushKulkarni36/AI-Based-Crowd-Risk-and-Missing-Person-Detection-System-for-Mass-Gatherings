@@ -3,36 +3,78 @@ import cors from 'cors';
 import dotenv from 'dotenv';
 import path from 'path';
 import { fileURLToPath } from 'url';
+import http from 'http';
+import helmet from 'helmet';
+import rateLimit from 'express-rate-limit';
 
+import authRoutes from './routes/auth.routes.js';
 import videoRoutes from './routes/video.routes.js';
 import personRoutes from './routes/person.routes.js';
 import statsRoutes from './routes/stats.routes.js';
 import errorHandler from './middleware/error.js';
+import initializeSocketIO from './socket.js';
+import logger from './utils/logger.js';
+
+// Start BullMQ worker (background process)
+import './workers/video.worker.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
+// Load backend .env first, then root .env as fallback
+dotenv.config({ path: path.join(__dirname, '.env') });
 dotenv.config({ path: path.join(__dirname, '../.env') });
 
 const app = express();
 const PORT = process.env.PORT || 5000;
 
-// Middleware
-app.use(cors());
+// ============================================================================
+// SECURITY MIDDLEWARE
+// ============================================================================
+app.use(helmet());
+
+const limiter = rateLimit({
+  windowMs: 15 * 60 * 1000, // 15 minutes
+  max: 100, // limit each IP to 100 requests per windowMs
+  message: 'Too many requests from this IP, please try again later.'
+});
+
+app.use('/api/', limiter);
+
+// ============================================================================
+// CORE MIDDLEWARE
+// ============================================================================
+app.use(cors({
+  origin: 'http://localhost:5173',
+  credentials: true,
+  methods: ['GET','POST','PUT','PATCH','DELETE','OPTIONS'],
+  allowedHeaders: ['Content-Type','Authorization']
+}));
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
-// Static assets
+// ============================================================================
+// STATIC ASSETS
+// ============================================================================
 app.use('/uploads', express.static(path.join(__dirname, '../data/uploads')));
+app.use('/uploads/photos', express.static(path.join(__dirname, '../data/uploads/photos')));
+app.use('/uploads/videos', express.static(path.join(__dirname, '../data/uploads/videos')));
 app.use('/results', express.static(path.join(__dirname, '../data/results')));
 
-// Routes
+// ============================================================================
+// ROUTES
+// ============================================================================
+app.use('/api/auth', authRoutes);
 app.use('/api/video', videoRoutes);
 app.use('/api/persons', personRoutes);
 app.use('/api/stats', statsRoutes);
 
 // Health check
 app.get('/api/health', (req, res) => {
-  res.json({ status: 'OK', message: 'Backend running', timestamp: new Date().toISOString() });
+  res.json({
+    status: 'OK',
+    message: 'Backend running',
+    timestamp: new Date().toISOString()
+  });
 });
 
 // 404 handler
@@ -40,9 +82,43 @@ app.use((req, res, next) => {
   res.status(404).json({ success: false, error: 'Not Found' });
 });
 
-// Error handler
+// ============================================================================
+// ERROR HANDLER
+// ============================================================================
 app.use(errorHandler);
 
-app.listen(PORT, () => {
-  console.log(`✅ Backend running on http://localhost:${PORT}`);
+// ============================================================================
+// HTTP SERVER & SOCKET.IO
+// ============================================================================
+const httpServer = http.createServer(app);
+const io = initializeSocketIO(httpServer);
+
+// ============================================================================
+// SERVER STARTUP
+// ============================================================================
+httpServer.listen(PORT, () => {
+  logger.info(`✅ Backend running on http://localhost:${PORT}`);
+  logger.info(`📡 Socket.io listening on /events namespace`);
 });
+
+// ============================================================================
+// GRACEFUL SHUTDOWN
+// ============================================================================
+process.on('SIGTERM', async () => {
+  logger.info('SIGTERM received, shutting down gracefully...');
+  httpServer.close(() => {
+    logger.info('✓ HTTP server closed');
+    process.exit(0);
+  });
+});
+
+process.on('SIGINT', async () => {
+  logger.info('SIGINT received, shutting down gracefully...');
+  httpServer.close(() => {
+    logger.info('✓ HTTP server closed');
+    process.exit(0);
+  });
+});
+
+export { app, httpServer, io };
+

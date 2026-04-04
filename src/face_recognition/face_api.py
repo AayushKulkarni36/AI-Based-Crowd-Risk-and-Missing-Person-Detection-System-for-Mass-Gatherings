@@ -1,294 +1,525 @@
-import os
-import uuid
-import sys
-import json
-import threading
-from pathlib import Path
+#!/usr/bin/env python3
+"""
+FastAPI Face Recognition Microservice
+Handles face enrollment, search, and integration with PostgreSQL + pgvector
 
-SRC_DIR = Path(__file__).resolve().parents[1]
-if str(SRC_DIR) not in sys.path:
-    sys.path.insert(0, str(SRC_DIR))
+Endpoints:
+  GET  /health          → service status check
+  POST /face/enroll     → enroll face for missing person
+  POST /face/search     → search for similar faces
+  DELETE /face/embedding/:id → delete face vector for person
 
+Integration:
+  - PostgreSQL 15 with pgvector extension for storing normalized 512-dim face embeddings
+  - InsightFace buffalo_l model for face detection + ArcFace embeddings
+  - asyncpg for async database operations
+  - CUDA support via InsightFace
+
+Run:
+  uvicorn face_api:app --host 0.0.0.0 --port 5001 --workers 1
+"""
+
+import asyncio
+import base64
+import io
 import logging
-import traceback
+import os
+from contextlib import asynccontextmanager
+from typing import Optional
 
-# Configure logging
+import asyncpg
+import cv2
+import numpy as np
+from fastapi import FastAPI, HTTPException
+from fastapi.responses import JSONResponse
+from PIL import Image
+from pydantic import BaseModel
+
+try:
+    from insightface.app import FaceAnalysis
+    INSIGHTFACE_AVAILABLE = True
+except ImportError:
+    INSIGHTFACE_AVAILABLE = False
+
+# ============================================================================
+# CONFIGURATION & LOGGING
+# ============================================================================
+
 logging.basicConfig(
     level=logging.INFO,
-    format="%(asctime)s [%(levelname)s] %(message)s",
-    handlers=[logging.StreamHandler(sys.stdout)]
+    format='[%(levelname)s] %(asctime)s - %(message)s'
 )
 logger = logging.getLogger(__name__)
 
-from flask import Flask, request, jsonify, send_from_directory, render_template
-from flask_cors import CORS
+DB_HOST = os.getenv("DB_HOST", "localhost")
+DB_PORT = int(os.getenv("DB_PORT", "5432"))
+DB_NAME = os.getenv("DB_NAME", "missing_persons")
+DB_USER = os.getenv("DB_USER", "postgres")
+DB_PASSWORD = os.getenv("DB_PASSWORD", "postgres123")
 
-from face_recognition.face_processor import FaceProcessor
-from face_recognition.main import MassGatheringSurveillance
-
-
-"""
-Flask backend for face similarity matching and video processing.
-
-Endpoints:
-- POST /register_missing_person
-- POST /upload_video
-- GET  /processed/<video_id>
-
-All operations use:
-- MTCNN for face detection/alignment
-- FaceNet (InceptionResnetV1, vggface2) embeddings
-- Cosine similarity against PostgreSQL embeddings
-
-This service demonstrates end-to-end face similarity matching and
-pipeline validation; it does not report live accuracy metrics.
-"""
+FACE_MATCH_THRESHOLD = 0.60  # InsightFace buffalo_l recommended
 
 
-BASE_DIR = Path(__file__).resolve().parent
-DATA_DIR = BASE_DIR.parent.parent / "data"
-UPLOAD_DIR = DATA_DIR / "uploads"
-PROCESSED_DIR = DATA_DIR / "processed"
-PHOTO_DIR = DATA_DIR / "photos"
+# ============================================================================
+# PYDANTIC MODELS
+# ============================================================================
 
-UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
-PROCESSED_DIR.mkdir(parents=True, exist_ok=True)
-PHOTO_DIR.mkdir(parents=True, exist_ok=True)
+class EnrollRequest(BaseModel):
+    """Request to enroll a face"""
+    person_id: int
+    image_base64: str
 
-app = Flask(
-    __name__,
-    template_folder=str(BASE_DIR / "templates"),
-    static_folder=str(BASE_DIR / "static"),
+
+class SearchRequest(BaseModel):
+    """Request to search for similar faces"""
+    image_base64: str
+    top_k: Optional[int] = 3
+
+
+class FaceMatch(BaseModel):
+    """Single face match result"""
+    person_id: int
+    name: Optional[str] = None
+    similarity: float
+    status: Optional[str] = None
+
+
+class SearchResponse(BaseModel):
+    """Face search response"""
+    matches: list[FaceMatch]
+    threshold: float
+
+
+class HealthResponse(BaseModel):
+    """Health check response"""
+    status: str
+    model: str
+    device: str
+    db_connected: bool
+
+
+class EnrollResponse(BaseModel):
+    """Face enrollment response"""
+    success: bool
+    person_id: int
+    embedding_dim: int = 512
+    stored: bool
+
+
+# ============================================================================
+# SINGLETON SERVICES
+# ============================================================================
+
+class FaceAnalysisService:
+    """Load InsightFace model once at startup"""
+
+    def __init__(self):
+        self.app = None
+        self._initialized = False
+
+    async def initialize(self):
+        """Load model once at startup"""
+        if self._initialized:
+            return
+
+        if not INSIGHTFACE_AVAILABLE:
+            logger.error("InsightFace not available. Install: pip install insightface onnxruntime-gpu")
+            return
+
+        try:
+            logger.info("Loading InsightFace buffalo_l model...")
+            self.app = FaceAnalysis(
+                name='buffalo_l',
+                providers=['CUDAExecutionProvider', 'CPUExecutionProvider']
+            )
+            self.app.prepare(ctx_id=0, det_size=(640, 640))
+            self._initialized = True
+            logger.info("✓ InsightFace buffalo_l loaded (CUDA enabled)")
+        except Exception as e:
+            logger.error(f"Failed to load InsightFace: {e}")
+
+    def get_embedding(self, frame: np.ndarray) -> Optional[np.ndarray]:
+        """
+        Extract face embedding from BGR frame.
+        Returns 512-dim float32 L2-normalized embedding or None if no face.
+        """
+        if self.app is None:
+            return None
+
+        try:
+            faces = self.app.get(frame)
+            if not faces:
+                return None
+
+            # Use first detected face
+            embedding = faces[0].embedding.astype(np.float32)
+
+            # Normalize to unit length (L2)
+            norm = np.linalg.norm(embedding)
+            if norm > 0:
+                embedding = embedding / norm
+
+            return embedding
+        except Exception as e:
+            logger.error(f"Embedding extraction failed: {e}")
+            return None
+
+
+class DatabaseService:
+    """Manage PostgreSQL async connection pool"""
+
+    def __init__(self):
+        self.pool = None
+
+    async def initialize(self):
+        """Create connection pool"""
+        if self.pool:
+            return
+
+        try:
+            logger.info(f"Connecting to PostgreSQL at {DB_HOST}:{DB_PORT}/{DB_NAME}...")
+            self.pool = await asyncpg.create_pool(
+                host=DB_HOST,
+                port=DB_PORT,
+                database=DB_NAME,
+                user=DB_USER,
+                password=DB_PASSWORD,
+                min_size=2,
+                max_size=10,
+                command_timeout=60
+            )
+            logger.info("✓ PostgreSQL connection pool initialized")
+        except Exception as e:
+            logger.error(f"Database init failed: {e}")
+
+    async def close(self):
+        """Close connection pool"""
+        if self.pool:
+            await self.pool.close()
+            logger.info("✓ Database pool closed")
+
+    async def get_person(self, person_id: int) -> Optional[dict]:
+        """Fetch person record"""
+        if not self.pool:
+            return None
+
+        query = "SELECT id, name, status FROM missing_persons WHERE id = $1"
+        try:
+            row = await self.pool.fetchrow(query, person_id)
+            return dict(row) if row else None
+        except Exception as e:
+            logger.error(f"Person fetch failed: {e}")
+            return None
+
+    async def store_face_vector(self, person_id: int, embedding: np.ndarray) -> bool:
+        """Store normalized face vector in pgvector column"""
+        if not self.pool:
+            return False
+
+        embedding_list = embedding.tolist()
+
+        query = """
+        UPDATE missing_persons
+        SET face_vector = $1, updated_at = NOW()
+        WHERE id = $2
+        RETURNING id
+        """
+
+        try:
+            result = await self.pool.fetchval(query, embedding_list, person_id)
+            if result:
+                logger.info(f"✓ Face vector stored for person {person_id}")
+                return True
+            else:
+                logger.warning(f"Person {person_id} not found in database")
+                return False
+        except Exception as e:
+            logger.error(f"Vector storage failed: {e}")
+            return False
+
+    async def search_similar_faces(
+        self,
+        embedding: np.ndarray,
+        limit: int = 3
+    ) -> list[dict]:
+        """
+        Search pgvector using cosine distance.
+        Returns matches with person_id, name, similarity score.
+        """
+        if not self.pool:
+            return []
+
+        embedding_list = embedding.tolist()
+
+        query = """
+        SELECT
+            id,
+            name,
+            status,
+            1 - (face_vector <=> %s) as similarity
+        FROM missing_persons
+        WHERE face_vector IS NOT NULL AND status = 'ACTIVE'
+        ORDER BY face_vector <=> %s
+        LIMIT %s
+        """
+
+        try:
+            # Use psycopg2-compatible param placeholders with asyncpg
+            rows = await self.pool.fetch(
+                """
+                SELECT
+                    id,
+                    name,
+                    status,
+                    1 - (face_vector <=> $1) as similarity
+                FROM missing_persons
+                WHERE face_vector IS NOT NULL AND status = 'ACTIVE'
+                ORDER BY face_vector <=> $1
+                LIMIT $2
+                """,
+                embedding_list,
+                limit
+            )
+
+            results = []
+            for row in rows:
+                results.append({
+                    "person_id": row["id"],
+                    "name": row["name"],
+                    "similarity": float(row["similarity"]),
+                    "status": row["status"]
+                })
+            return results
+        except Exception as e:
+            logger.error(f"Face search failed: {e}")
+            return []
+
+    async def delete_face_vector(self, person_id: int) -> bool:
+        """Delete face vector for a person"""
+        if not self.pool:
+            return False
+
+        query = """
+        UPDATE missing_persons
+        SET face_vector = NULL, updated_at = NOW()
+        WHERE id = $1
+        RETURNING id
+        """
+
+        try:
+            result = await self.pool.fetchval(query, person_id)
+            if result:
+                logger.info(f"✓ Face vector deleted for person {person_id}")
+                return True
+            else:
+                logger.warning(f"Person {person_id} not found")
+                return False
+        except Exception as e:
+            logger.error(f"Vector deletion failed: {e}")
+            return False
+
+
+# ============================================================================
+# GLOBAL SERVICE INSTANCES
+# ============================================================================
+
+face_service = FaceAnalysisService()
+db_service = DatabaseService()
+
+
+# ============================================================================
+# FASTAPI LIFESPAN
+# ============================================================================
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    """Initialize on startup, cleanup on shutdown"""
+    logger.info("🚀 Starting CrowdSafe Face API...")
+    await face_service.initialize()
+    await db_service.initialize()
+
+    yield
+
+    logger.info("🛑 Shutting down...")
+    await db_service.close()
+
+
+# ============================================================================
+# FASTAPI APP
+# ============================================================================
+
+app = FastAPI(
+    title="CrowdSafe Face Recognition API",
+    version="1.0.0",
+    description="Face enrollment and similarity search service",
+    lifespan=lifespan
 )
-CORS(app)
-
-# Reuse long-lived processor to avoid reloading models
-face_processor = FaceProcessor()
 
 
-def process_video_async(input_path: Path, output_path: Path, video_id: str) -> None:
+# ============================================================================
+# ENDPOINTS
+# ============================================================================
+
+@app.get("/health", response_model=HealthResponse, tags=["health"])
+async def health_check():
+    """Service health and readiness check"""
+    return HealthResponse(
+        status="ok",
+        model="buffalo_l",
+        device="cuda",
+        db_connected=db_service.pool is not None
+    )
+
+
+@app.post("/face/enroll", response_model=EnrollResponse, tags=["face"])
+async def enroll_face(request: EnrollRequest):
     """
-    Run the full MassGatheringSurveillance pipeline on a CCTV video
-    in a background thread to avoid blocking the Flask request.
-    Handles exceptions to ensure job state is updated (completed/failed).
-    """
-    logger.info(f"🚀 [Job {video_id}] Starting video processing...")
-    logger.info(f"   Input: {input_path}")
-    logger.info(f"   Output: {output_path}")
+    Enroll face for a missing person.
 
-    done_flag = Path(str(output_path) + ".done")
-    failed_flag = Path(str(output_path) + ".failed")
+    Takes a base64-encoded image, extracts 512-dim ArcFace embedding,
+    and stores normalized vector in missing_persons.face_vector (pgvector).
 
-    try:
-        mgs = MassGatheringSurveillance()
-        mgs.process_cctv_stream(
-            source=str(input_path),
-            duration=0,
-            output_path=str(output_path),
-            show_window=False,
-        )
+    Args:
+      person_id: missing person database ID
+      image_base64: base64 encoded JPEG/PNG image
 
-        # Signal that video is fully written and ready to be served
-        logger.info(f"✅ [Job {video_id}] Processing complete. Creating .done flag.")
-        done_flag.touch()
-
-    except Exception as e:
-        logger.error(f"❌ [Job {video_id}] Processing FAILED: {e}")
-        traceback.print_exc()
-        
-        # Write failure reason to file so frontend can know
-        with open(failed_flag, "w") as f:
-            f.write(str(e))
-        
-        # Ensure we don't leave a partial done flag if it somehow existed
-        if done_flag.exists():
-            done_flag.unlink()
-
-
-@app.route("/")
-def index():
-    return render_template("index.html")
-
-
-@app.post("/register_missing_person")
-def register_missing_person():
-    """
-    Register a missing person using a real face photo.
-
-    Expected form fields:
-    - name (str)
-    - age (int)
-    - gender (str)
-    - description (optional)
-    - photo (file)
+    Returns:
+      success, person_id, embedding_dim (512), stored flag
     """
     try:
-        name = request.form.get("name", "").strip()
-        age = int(request.form.get("age", "0"))
-        gender = request.form.get("gender", "").strip()
-        description = request.form.get("description", "").strip()
-        photo_file = request.files.get("photo")
-
-        if not name or not photo_file:
-            return jsonify({"success": False, "error": "Name and photo are required."}), 400
-
-        # Save photo to disk
-        safe_name = name.replace(" ", "_")
-        filename = f"{safe_name}_{uuid.uuid4().hex[:8]}.jpg"
-        photo_path = PHOTO_DIR / filename
-        photo_file.save(str(photo_path))
-
-        # Use FaceProcessor to add person with real embedding
-        person_id = face_processor.add_missing_person(
-            name=name,
-            age=age,
-            gender=gender,
-            photo_path=str(photo_path),
-            description=description,
-        )
-
-        return jsonify(
-            {
-                "success": True,
-                "person_id": person_id,
-                "message": "Missing person registered with face similarity embedding.",
-            }
-        )
-    except Exception as exc:
-        logger.error(f"Error registering person: {exc}")
-        return jsonify({"success": False, "error": str(exc)}), 500
-
-
-@app.post("/upload_video")
-def upload_video():
-    """
-    Upload a CCTV video and process it through the full
-    crowd + face similarity + risk pipeline.
-    """
-    try:
-        video_file = request.files.get("video")
-        if not video_file:
-            return jsonify({"success": False, "error": "No video file provided."}), 400
-
-        video_id = uuid.uuid4().hex
-        input_name = f"{video_id}_input.mp4"
-        output_name = f"{video_id}_processed.mp4"
-        input_path = UPLOAD_DIR / input_name
-        output_path = PROCESSED_DIR / output_name
-
-        video_file.save(str(input_path))
-        logger.info(f"Received video upload: {video_id} ({input_path})")
-
-        # Start background processing so the HTTP request returns immediately
-        thread = threading.Thread(
-            target=process_video_async,
-            args=(input_path, output_path, video_id),
-            daemon=True,
-        )
-        thread.start()
-
-        return jsonify(
-            {
-                "success": True,
-                "video_id": video_id,
-                "processed_url": f"/processed/{video_id}",
-                "message": "Video processing started. Please wait while analysis completes.",
-            }
-        )
-    except Exception as exc:
-        logger.error(f"Error starting video job: {exc}")
-        return jsonify({"success": False, "error": str(exc)}), 500
-
-
-@app.get("/processed/<video_id>")
-def get_processed_video(video_id: str):
-    """
-    Serve processed video by ID.
-    """
-    prefix = f"{video_id}_processed"
-    for file in PROCESSED_DIR.glob(f"{prefix}.*"):
-        # Double check readiness to prevent partial downloads via direct link
-        done_flag = Path(str(file) + ".done")
-        if not done_flag.exists():
-             return jsonify({"success": False, "error": "Video processing not complete."}), 400
-        
-        if file.stat().st_size < 100 * 1024:  # 100KB threshold
-             return jsonify({"success": False, "error": "Video file is empty/corrupt."}), 500
-
-        # Check if download is requested
-        download = request.args.get("download", "false").lower() == "true"
-        return send_from_directory(PROCESSED_DIR, file.name, as_attachment=download)
-    return jsonify({"success": False, "error": "Processed video not found."}), 404
-
-
-@app.get("/status/<video_id>")
-def check_status(video_id: str):
-    """
-    Readiness check for processed videos.
-    Checks for .failed flag, then .done flag AND valid file size.
-    """
-    # 1. Check for failure first
-    output_filename = f"{video_id}_processed.mp4"
-    failed_flag = PROCESSED_DIR / (output_filename + ".failed")
-    
-    if failed_flag.exists():
+        # Decode base64 image
         try:
-            with open(failed_flag, "r") as f:
-                error_msg = f.read()
-        except Exception:
-            error_msg = "Unknown error occurred."
-        return jsonify({"ready": False, "status": "failed", "error": error_msg})
+            image_bytes = base64.b64decode(request.image_base64)
+            img = Image.open(io.BytesIO(image_bytes))
+            frame = cv2.cvtColor(np.array(img), cv2.COLOR_RGB2BGR)
+        except Exception as e:
+            raise HTTPException(status_code=400, detail=f"Invalid image format: {str(e)}")
 
-    # 3. Check for alert data to surface found persons
-    found_persons = []
-    alert_path = PROCESSED_DIR / (f"{video_id}_processed_alert.json")
-    if alert_path.exists():
-        try:
-            found_persons = json.loads(alert_path.read_text())
-        except Exception:
-            pass
-            
-    # 4. Determine state
-    # 4. Determine state
-    state = "processing"
-    
-    video_path = PROCESSED_DIR / output_filename
-    
-    # If final file exists and size is good, we are done
-    if video_path.exists() and video_path.stat().st_size > 100 * 1024:
-        # Check explicit done flag to be sure atomic rename finished
-        done_flag = Path(str(video_path) + ".done")
-        if done_flag.exists():
-            state = "done"
+        # Extract embedding
+        embedding = face_service.get_embedding(frame)
+        if embedding is None:
+            raise HTTPException(status_code=400, detail="No face detected in image")
 
-    return jsonify({
-        "ready": (state == "done"),
-        "status": state,
-        "video_id": video_id,
-        "found_persons": found_persons,
-        "download_url": f"/processed/{video_id}" if state == "done" else None
-    })
+        # Verify person exists
+        person = await db_service.get_person(request.person_id)
+        if not person:
+            raise HTTPException(status_code=404, detail=f"Person {request.person_id} not found")
 
-@app.get("/missing_persons")
-def get_missing_persons():
-    """Get all active missing persons."""
-    try:
-        persons = face_processor.db.get_active_missing_persons()
-        # Convert bytes/datetime to serializable format
-        for p in persons:
-            if p.get("embedding"):
-                p.pop("embedding") # Don't send bytes
-            if p.get("reported_date"):
-                p["reported_date"] = str(p["reported_date"])
-            if p.get("found_timestamp"):
-                p["found_timestamp"] = str(p["found_timestamp"])
-        return jsonify(persons)
+        # Store vector in database
+        stored = await db_service.store_face_vector(request.person_id, embedding)
+        if not stored:
+            raise HTTPException(status_code=500, detail="Failed to store face vector")
+
+        return EnrollResponse(
+            success=True,
+            person_id=request.person_id,
+            embedding_dim=512,
+            stored=True
+        )
+
+    except HTTPException:
+        raise
     except Exception as e:
-        logger.error(f"Error getting persons: {e}")
-        return jsonify([]), 500
+        logger.error(f"Enrollment failed: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"Enrollment error: {str(e)}")
 
+
+@app.post("/face/search", response_model=SearchResponse, tags=["face"])
+async def search_faces(request: SearchRequest):
+    """
+    Search for missing persons matching detected face.
+
+    Takes a base64-encoded image, extracts embedding, and searches
+    PostgreSQL pgvector for similar faces with cosine distance.
+
+    Returns matches with similarity scores and person details only if
+    similarity >= FACE_MATCH_THRESHOLD (0.6).
+
+    Args:
+      image_base64: base64 encoded JPEG/PNG
+      top_k: max number of results (default 3)
+
+    Returns:
+      List of matches with person_id, name, similarity, status
+    """
+    try:
+        # Decode image
+        try:
+            image_bytes = base64.b64decode(request.image_base64)
+            img = Image.open(io.BytesIO(image_bytes))
+            frame = cv2.cvtColor(np.array(img), cv2.COLOR_RGB2BGR)
+        except Exception as e:
+            raise HTTPException(status_code=400, detail=f"Invalid image format: {str(e)}")
+
+        # Extract embedding
+        embedding = face_service.get_embedding(frame)
+        if embedding is None:
+            raise HTTPException(status_code=400, detail="No face detected in image")
+
+        # Search database
+        all_matches = await db_service.search_similar_faces(
+            embedding,
+            limit=request.top_k or 3
+        )
+
+        # Filter by threshold
+        matches = [
+            FaceMatch(**m) for m in all_matches
+            if m["similarity"] >= FACE_MATCH_THRESHOLD
+        ]
+
+        logger.info(f"Found {len(matches)} matches (threshold: {FACE_MATCH_THRESHOLD})")
+
+        return SearchResponse(
+            matches=matches,
+            threshold=FACE_MATCH_THRESHOLD
+        )
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Search failed: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"Search error: {str(e)}")
+
+
+@app.delete("/face/embedding/{person_id}", tags=["face"])
+async def delete_embedding(person_id: int):
+    """
+    Delete face embedding for a person.
+
+    Clears the face_vector column in missing_persons table for person_id.
+
+    Returns:
+      success flag and person_id
+    """
+    try:
+        deleted = await db_service.delete_face_vector(person_id)
+        if not deleted:
+            raise HTTPException(status_code=404, detail=f"Person {person_id} not found")
+
+        return JSONResponse(
+            status_code=200,
+            content={"success": True, "person_id": person_id}
+        )
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Deletion failed: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+# ============================================================================
+# MAIN (for direct execution)
+# ============================================================================
 
 if __name__ == "__main__":
-    # For local Windows demo use only; behind nginx/Gunicorn in real deployment.
-    app.run(host="0.0.0.0", port=8000, debug=True)
+    import uvicorn
 
+    uvicorn.run(
+        app,
+        host="0.0.0.0",
+        port=5001,
+        workers=1,  # GPU is shared; single worker only
+        log_level="info"
+    )

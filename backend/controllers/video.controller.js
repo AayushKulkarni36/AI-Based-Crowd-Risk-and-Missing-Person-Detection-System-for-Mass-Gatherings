@@ -1,12 +1,10 @@
 import path from 'path';
 import { fileURLToPath } from 'url';
-
-import { runYOLODetection } from '../utils/python.executor.js';
+import pool from '../config/db.js';
+import { videoQueue } from '../queues/video.queue.js';
+import logger from '../utils/logger.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
-
-// In-memory job storage (consider persistent store for production)
-const jobs = new Map();
 
 export async function uploadVideo(req, res, next) {
   try {
@@ -14,24 +12,27 @@ export async function uploadVideo(req, res, next) {
       return res.status(400).json({ success: false, error: 'No video file provided' });
     }
 
-    const videoId = Date.now().toString();
-    const job = {
-      id: videoId,
-      filename: req.file.filename,
-      path: req.file.path,
-      status: 'uploaded',
-      uploadedAt: new Date().toISOString()
-    };
+    const userId = req.user?.id ?? null;
 
-    jobs.set(videoId, job);
+    const result = await pool.query(
+      `INSERT INTO video_jobs (filename, file_path, status, uploaded_by, uploaded_at)
+       VALUES ($1, $2, 'UPLOADED', $3, NOW())
+       RETURNING id, filename`,
+      [req.file.filename, req.file.path, userId]
+    );
+
+    const videoJobId = result.rows[0].id;
+
+    logger.info(`Video uploaded: ${req.file.filename} → job ${videoJobId}`);
 
     return res.json({
       success: true,
-      videoId,
+      videoJobId,
       filename: req.file.filename,
       message: 'Video uploaded successfully'
     });
   } catch (error) {
+    logger.error('Video upload failed:', error.message);
     return next(error);
   }
 }
@@ -39,128 +40,127 @@ export async function uploadVideo(req, res, next) {
 export async function processVideo(req, res, next) {
   try {
     const { videoId } = req.params;
-    const job = jobs.get(videoId);
 
-    if (!job) {
+    const videoResult = await pool.query(
+      'SELECT id, filename, file_path, status FROM video_jobs WHERE id = $1',
+      [videoId]
+    );
+
+    if (videoResult.rows.length === 0) {
       return res.status(404).json({ success: false, error: 'Video not found' });
     }
 
-    if (job.status === 'processing') {
-      return res.status(202).json({ success: true, message: 'Video already processing', videoId });
+    const videoJob = videoResult.rows[0];
+
+    if (videoJob.status === 'PROCESSING' || videoJob.status === 'COMPLETED') {
+      return res.status(202).json({
+        success: true,
+        message: 'Video is already processing or completed',
+        videoId,
+        status: videoJob.status
+      });
     }
 
-    job.status = 'processing';
-    job.processingStartedAt = new Date().toISOString();
+    // Enqueue in BullMQ
+    const job = await videoQueue.add(
+      'process-video',
+      {
+        videoPath: videoJob.file_path,
+        videoJobId: videoJob.id,
+        uploadedBy: req.user?.id,
+        faceMatch: req.body?.faceMatch || false
+      },
+      {
+        jobId: `video-${videoJob.id}`,
+        priority: 1
+      }
+    );
 
-    res.json({ success: true, message: 'Processing started', videoId });
+    await pool.query(
+      "UPDATE video_jobs SET status = 'QUEUED' WHERE id = $1",
+      [videoJob.id]
+    );
 
-    const outputPath = path.join(__dirname, '../../data/results', `result_${videoId}.avi`);
+    logger.info(`Video job ${videoJob.id} queued as BullMQ job ${job.id}`);
 
-    try {
-      const results = await runYOLODetection(job.path, outputPath);
-
-      const avgPeople = Number(results.avgPeoplePerFrame || 0);
-      const totalPeople = Number(results.totalPeople || 0);
-      const totalFrames = Number(results.totalFrames || 0);
-      const capacity = Number(process.env.CROWD_CAPACITY || 40);
-      const occupancy = capacity > 0 ? (avgPeople / capacity) * 100 : 0;
-      const averageFPS = parseFloat(results.averageFPS ?? 0) || 0;
-      const minFPS = parseFloat(results.minFPS ?? 0) || 0;
-      const maxFPS = parseFloat(results.maxFPS ?? 0) || 0;
-      const fpsRating = results.fpsRating || 'N/A';
-
-      job.status = 'completed';
-      job.completedAt = new Date().toISOString();
-      job.results = {
-        totalPeople,
-        avgDensity: avgPeople,
-        totalFrames,
-        riskLevel: calculateRisk(occupancy),
-        occupancy: occupancy.toFixed(1),
-        processedVideo: `/results/result_${videoId}.avi`,
-        suggestions: getSuggestions(occupancy),
-        averageFPS,
-        minFPS,
-        maxFPS,
-        fpsRating
-      };
-    } catch (error) {
-      job.status = 'failed';
-      job.error = error.message;
-      job.failedAt = new Date().toISOString();
-      console.error('Video processing failed:', error);
-    }
+    return res.status(202).json({
+      success: true,
+      message: 'Video processing started',
+      videoId,
+      jobId: job.id,
+      status: 'QUEUED'
+    });
   } catch (error) {
-    next(error);
+    logger.error('processVideo failed:', error.message);
+    return next(error);
   }
 }
 
 export async function getResults(req, res, next) {
   try {
     const { videoId } = req.params;
-    const job = jobs.get(videoId);
 
-    if (!job) {
-      return res.status(404).json({ success: false, error: 'Video not found' });
+    const result = await pool.query(
+      `SELECT
+         id, filename, status, progress, total_people, avg_density,
+         risk_level, face_matches_count, results_json, error_message,
+         output_video_path,
+         uploaded_at, processing_started_at, processing_completed_at
+       FROM video_jobs
+       WHERE id = $1`,
+      [videoId]
+    );
+
+    if (result.rows.length === 0) {
+      return res.status(404).json({ success: false, error: 'Video job not found' });
     }
 
-    if (job.status === 'completed' && job.results) {
-      console.log('=== BACKEND: Sending to Frontend ===');
-      console.log('Job Status:', job.status);
-      console.log('Full Results Object:', job.results);
-      console.log('FPS Values:', {
-        averageFPS: job.results.averageFPS,
-        minFPS: job.results.minFPS,
-        maxFPS: job.results.maxFPS,
-        fpsRating: job.results.fpsRating
-      });
-      console.log('Data Types:', {
-        averageFPS: typeof job.results.averageFPS,
-        minFPS: typeof job.results.minFPS,
-        maxFPS: typeof job.results.maxFPS
-      });
-    }
+    const job = result.rows[0];
 
-    if (job.status === 'completed' && job.results) {
-      return res.json({
-        status: job.status,
-        results: {
-          totalPeople: job.results.totalPeople,
-          avgPeoplePerFrame: job.results.avgDensity,
-          totalFrames: job.results.totalFrames,
-          maxPeople: job.results.totalPeople,
-          riskLevel: job.results.riskLevel,
-          averageFPS: job.results.averageFPS,
-          minFPS: job.results.minFPS,
-          maxFPS: job.results.maxFPS,
-          fpsRating: job.results.fpsRating,
-          processedVideo: job.results.processedVideo,
-          suggestions: job.results.suggestions,
-          occupancy: job.results.occupancy
-        }
-      });
-    }
+    // results_json is stored as jsonb, comes back as object already
+    const parsedResults = job.results_json || {};
 
-    return res.json(job);
+    return res.json({
+      success: true,
+      status: job.status,
+      progress: job.progress || 0,
+      results: {
+        totalPeople: job.total_people,
+        avgPeoplePerFrame: job.avg_density,
+        riskLevel: job.risk_level,
+        faceMatches: job.face_matches_count || 0,
+        outputVideoPath: job.output_video_path,
+        ...parsedResults
+      },
+      uploadedAt: job.uploaded_at,
+      processingStartedAt: job.processing_started_at,
+      processingCompletedAt: job.processing_completed_at,
+      error: job.error_message
+    });
   } catch (error) {
+    logger.error('getResults failed:', error.message);
     return next(error);
   }
 }
 
-function calculateRisk(occupancy) {
-  if (occupancy < 80) return 'SAFE';
-  if (occupancy < 95) return 'MODERATE';
-  if (occupancy < 110) return 'RISKY';
-  return 'CRITICAL';
-}
+export async function listVideos(req, res, next) {
+  try {
+    const limit = Math.min(parseInt(req.query.limit) || 10, 100);
+    const offset = parseInt(req.query.offset) || 0;
 
-function getSuggestions(occupancy) {
-  const risk = calculateRisk(occupancy);
-  const suggestions = {
-    SAFE: ['✓ Occupancy is within safe limits', 'Continue regular monitoring'],
-    MODERATE: ['⚠ Approaching maximum capacity', 'Monitor crowd flow closely', 'Prepare contingency measures'],
-    RISKY: ['⚠⚠ Capacity limit reached', 'Stop allowing new entries', 'Consider relocating some people', 'Increase security presence'],
-    CRITICAL: ['🚨 CRITICAL OVERCROWDING DETECTED', 'IMMEDIATE EVACUATION REQUIRED', 'Enable all emergency exits', 'Alert emergency services', 'Initiate crowd dispersal protocol']
-  };
-  return suggestions[risk] || suggestions.SAFE;
+    const result = await pool.query(
+      `SELECT
+         id, filename, status, total_people, risk_level, uploaded_at,
+         processing_completed_at, face_matches_count, progress
+       FROM video_jobs
+       ORDER BY uploaded_at DESC
+       LIMIT $1 OFFSET $2`,
+      [limit, offset]
+    );
+
+    return res.json({ success: true, videos: result.rows, limit, offset });
+  } catch (error) {
+    logger.error('listVideos failed:', error.message);
+    return next(error);
+  }
 }

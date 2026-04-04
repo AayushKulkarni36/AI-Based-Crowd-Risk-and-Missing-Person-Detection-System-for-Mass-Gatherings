@@ -1,52 +1,93 @@
-# AI-Based Crowd Risk and Missing Person Detection System for Mass Gatherings
+# CrowdSafe: AI-Based Crowd Risk & Missing Person Detection System
 
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
-[![Python](https://img.shields.io/badge/Python-3.9+-blue.svg)](https://www.python.org/)
-[![Node.js](https://img.shields.io/badge/Node.js-18+-green.svg)](https://nodejs.org/)
-[![PostgreSQL](https://img.shields.io/badge/PostgreSQL-15+-blue.svg)](https://www.postgresql.org/)
+![Status](https://img.shields.io/badge/Status-Production%20Ready-brightgreen)
+![Version](https://img.shields.io/badge/Version-1.0.0-blue)
+![License](https://img.shields.io/badge/License-MIT-green)
+![Python](https://img.shields.io/badge/Python-3.11+-blue.svg)
+![Node.js](https://img.shields.io/badge/Node.js-22+-green.svg)
+![PostgreSQL](https://img.shields.io/badge/PostgreSQL-15+-blue.svg)
 
-A comprehensive AI-powered system for real-time crowd monitoring, risk assessment, and missing person detection in mass gathering scenarios. Built with modern web technologies and state-of-the-art computer vision models.
+## 📋 Project Overview
 
-## Project Overview
+CrowdSafe is an AI-powered system that detects crowd density and identifies missing persons in video feeds. It combines real-time crowd analysis with facial recognition to provide actionable intelligence for public safety operations.
 
-This system provides intelligent crowd analysis using YOLOv5 object detection to identify and count people in video feeds, assess crowd density risks, and maintain a registry for missing person cases. The platform features a professional web dashboard for real-time monitoring, video analysis, and data visualization.
+### 🎯 Key Features
 
-### Key Features
+- **Real-Time Crowd Detection**: YOLOv8n-based person detection with risk level classification (Safe/Moderate/Risky/Critical)
+- **Face Recognition**: InsightFace-based facial embedding and matching against missing persons database
+- **Live Processing Dashboard**: Real-time job queue monitoring and results streaming via Socket.io
+- **Missing Persons Database**: Searchable repository of missing persons with photo and face embeddings
+- **Alert System**: Real-time alerts for crowd anomalies and face matches
+- **User Authentication**: JWT-based role-based access control (ADMIN/OPERATOR)
+- **REST API**: Comprehensive API for video upload, processing, and result retrieval
 
-- **Real-Time Crowd Detection**: YOLOv5-based person detection with high accuracy
-- **Risk Assessment**: Automatic classification of crowd density (Safe/Moderate/Risky/Critical)
-- **Video Analysis**: Upload and process video files for crowd analysis
-- **Missing Person Registry**: Database management for missing person cases
-- **Analytics Dashboard**: Comprehensive statistics and data visualization
-- **Professional UI**: Modern dark-themed React interface with Tailwind CSS
-- **RESTful API**: Node.js/Express backend with PostgreSQL database
+---
 
-##  Tech Stack
+## 🏗️ System Architecture
+
+```
+┌──────────────────────────────────────────┐
+│   React Frontend (Port 5173)            │
+│ - Dashboard, Video Analysis, Alerts    │
+│ - Real-time Socket.io /events         │
+└─────────────┬──────────────────────────┘
+              │ HTTP + WebSocket
+              ↓
+┌──────────────────────────────────────────┐
+│   Node.js Backend (Port 5000)           │
+│ - Express REST API (/api/*)            │
+│ - Socket.io /events namespace          │
+│ - BullMQ job queue                     │
+└──┬─────────────────────────────┬────────┘
+   │                             │
+   ↓                             ↓
+┌─────────────────┐    ┌────────────────┐
+│  PostgreSQL 15  │    │  Redis 7       │
+│ (missing_persons)   │ (Job Queue)   │
+│ + pgvector ext  │    │               │
+└─────────────────┘    └────────────────┘
+   ↑
+   │ SQL queries
+   │
+┌──────────────────────────────────────────┐
+│   Python AI Engine (Port 8001)          │
+│ - YOLOv8n person detection             │
+│ - InsightFace embeddings               │
+│ - FAISS vector search                  │
+│ - Heatmap generation                   │
+└──────────────────────────────────────────┘
+```
+
+---
+
+## 🗄️ Database Schema (PostgreSQL - "missing_persons")
+
+**6 Core Tables:**
+
+- **users** - User authentication & roles
+- **video_jobs** - Video processing tasks & results
+- **missing_persons** - Missing person registry with face embeddings
+- **detections** - Frame-level crowd detection results
+- **face_matches** - Matched faces from videos
+- **alert_logs** - Alert history & events
+
+**Indexes:** pgvector IVFFlat on face_vector, b-tree on status/timestamps
+
+---
+
+## 🔧 Technology Stack
 
 ### Frontend
-- **React 18** - Modern UI framework
-- **Vite** - Fast build tool and dev server
-- **Tailwind CSS** - Utility-first CSS framework
-- **Recharts** - Data visualization library
-- **React Router** - Client-side routing
-- **Axios** - HTTP client
+React 18, TypeScript, Vite, Tailwind CSS, React Query, Socket.io-client, React Hook Form, Radix UI, Recharts, Framer Motion, Sonner
 
 ### Backend
-- **Node.js** - JavaScript runtime
-- **Express.js** - Web application framework
-- **PostgreSQL** - Relational database with PostGIS extension
-- **Multer** - File upload handling
-- **pg** - PostgreSQL client
+Node.js v22, Express.js, PostgreSQL 15 + pgvector, Redis 7, BullMQ, Socket.io, JWT + bcrypt, Helmet, Winston
 
-### AI/ML
-- **YOLOv5 (Ultralytics)** - Object detection model
-- **OpenCV** - Computer vision library
-- **PyTorch** - Deep learning framework
-- **NumPy** - Numerical computing
+### Python AI
+FastAPI, Uvicorn, YOLOv8n, InsightFace, FAISS, OpenCV, PyTorch 2.9, ONNX Runtime, asyncpg
 
-### Database
-- **PostgreSQL 15+** - Primary database
-- **PostGIS** - Spatial database extension
+### Infrastructure
+Docker, Docker Compose, PostgreSQL 15, Redis 7
 
 ### Languages
 - **Python 3.9+** - AI/ML processing
