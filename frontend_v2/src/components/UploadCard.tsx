@@ -45,8 +45,8 @@ export default function UploadCard({ onUploadStart, onUploadComplete, onUploadEr
         try {
             setUploading(true);
             onUploadStart();
-            const { video_id } = await api.uploadVideo(file);
-            onUploadComplete(video_id);
+            const { videoJobId } = await api.uploadVideo(file);
+            onUploadComplete(videoJobId.toString());
         } catch (err: any) {
             onUploadError(err.message || 'Upload failed');
             setUploading(false);

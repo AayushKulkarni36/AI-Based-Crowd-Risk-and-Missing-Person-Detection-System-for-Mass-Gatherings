@@ -30,8 +30,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
 
     const refreshPersons = async () => {
         try {
-            const data = await api.getMissingPersons();
-            setRegisteredPersons(data);
+            const { persons } = await api.getMissingPersons();
+            setRegisteredPersons(persons);
         } catch (e) {
             console.error("Failed to load persons", e);
         }

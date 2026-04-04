@@ -1,582 +1,330 @@
 #!/usr/bin/env python3
 """
-AI-Based Crowd Risk & Missing Person Detection Pipeline
-YOLOv8n + InsightFace buffalo_l + FAISS
-
-Supports:
-  - Real-time person detection (YOLOv8n)
-  - Face detection & embedding (InsightFace buffalo_l)
-  - Face similarity search (FAISS)
-  - Crowd density heatmap generation
-  - Skip-frame strategy for VRAM optimization
-
-Usage:
-  python testSimple.py --video sample.mp4 --output result.avi --json --face-match --device cuda
+CrowdSafe YOLOv8 Crowd Detection Pipeline
+Processes video frames, detects people, classifies crowd risk, outputs JSON
 """
 
-from __future__ import annotations
-import argparse
-import json
-import logging
 import sys
-import time
-from collections import deque
-from pathlib import Path
-from typing import Union
+import json
+import argparse
 import cv2
 import numpy as np
+import time
+from pathlib import Path
+from datetime import datetime
 from ultralytics import YOLO
+import torch
 
-try:
-    from insightface.app import FaceAnalysis
-    INSIGHTFACE_AVAILABLE = True
-except ImportError:
-    INSIGHTFACE_AVAILABLE = False
-    logging.warning("InsightFace not installed. Face matching disabled.")
+# ============================================================================
+# CONFIG
+# ============================================================================
+MODEL_NAME = 'yolov8n.pt'  # nano model for RTX 3050 Ti
+PERSON_CLASS = 0  # COCO class for person
+CONF_THRESHOLD = 0.45
+IOU_THRESHOLD = 0.45
 
-try:
-    import faiss
-    FAISS_AVAILABLE = True
-except ImportError:
-    FAISS_AVAILABLE = False
-    logging.warning("FAISS not installed. Face search disabled.")
+# Risk classification thresholds
+RISK_THRESHOLDS = {
+    'SAFE': 10,
+    'MODERATE': 25,
+    'RISKY': 50,
+    'CRITICAL': float('inf')
+}
 
-# Configuration
-SKIP_FRAMES_CROWD = 3       # Process every 3rd frame for YOLOv8 (crowd counting)
-SKIP_FRAMES_FACE = 6        # Process every 6th frame for InsightFace (face matching)
-FACE_MATCH_THRESHOLD = 0.60 # InsightFace buffalo_l recommended threshold
-HEATMAP_GRID_SIZE = (15, 20)  # (height, width) for density heatmap
-DEVICE = 'cuda:0'         # CUDA device
+# ============================================================================
+# LOGGING (stderr only - stdout reserved for JSON)
+# ============================================================================
+def log_error(msg):
+    """Log error to stderr"""
+    print(f'ERROR: {msg}', file=sys.stderr, flush=True)
 
-LOGGER = logging.getLogger(__name__)
+def log_info(msg):
+    """Log info to stderr"""
+    print(f'INFO: {msg}', file=sys.stderr, flush=True)
 
-
-class PersonDetector:
-    """Wrapper for YOLOv8n person detection with CUDA FP16 support"""
-
-    def __init__(self, model_name: str = 'yolov8n.pt', device: str = 'cuda:0'):
-        LOGGER.info(f"Loading YOLOv8n model: {model_name}")
-        self.model = YOLO(model_name)
-        self.model.to(device)
-        self.device = device
-
-    def detect(self, frame: np.ndarray, conf: float = 0.45, half: bool = True) -> tuple[int, list]:
-        """
-        Detect persons in frame using YOLOv8n with FP16.
-
-        Returns:
-          (person_count, detections_list)
-          where detections_list = [{"x": int, "y": int, "conf": float}, ...]
-        """
-        results = self.model.predict(
-            frame,
-            classes=[0],  # COCO person class
-            conf=conf,
-            device=self.device,
-            half=True,  # FP16 mode for RTX 3050 Ti
-            verbose=False
-        )
-
-        detections = []
-        if results[0].boxes is not None:
-            for box in results[0].boxes:
-                x_center = int((box.xyxy[0][0] + box.xyxy[0][2]) / 2)
-                y_center = int((box.xyxy[0][1] + box.xyxy[0][3]) / 2)
-                conf = float(box.conf[0])
-                detections.append({
-                    "x": x_center,
-                    "y": y_center,
-                    "conf": conf
-                })
-
-        return len(detections), detections
-
-
-class FaceRecognitionPipeline:
-    """InsightFace buffalo_l + FAISS similarity search"""
-
-    def __init__(self, faiss_index_path: str | None = None):
-        if not INSIGHTFACE_AVAILABLE:
-            LOGGER.warning("InsightFace not available. Face matching disabled.")
-            self.app = None
-            self.faiss_index = None
-            return
-
-        LOGGER.info("Initializing InsightFace buffalo_l model...")
-        self.app = FaceAnalysis(
-            name='buffalo_l',
-            providers=['CUDAExecutionProvider']
-        )
-        self.app.prepare(ctx_id=0, det_size=(640, 640))
-
-        # FAISS index (will be loaded from DB or initialized empty)
-        self.faiss_index = None
-        self.person_ids = []  # Parallel array for reverse lookup
-        self.embeddings_db = {}  # In-memory cache: person_id -> embedding
-
-        if faiss_index_path and Path(faiss_index_path).exists():
-            self._load_faiss_index(faiss_index_path)
-
-    def detect_faces(self, frame: np.ndarray) -> list[dict]:
-        """
-        Detect faces and extract embeddings.
-
-        Returns:
-          [{"embedding": [512-dim float32], "bbox": (x1, y1, x2, y2)}, ...]
-        """
-        if self.app is None:
-            return []
-
-        faces = self.app.get(frame)
-        results = []
-        for face in faces:
-            results.append({
-                "embedding": face.embedding.astype(np.float32),
-                "bbox": face.bbox.astype(int).tolist()
-            })
-
-        return results
-
-    def search_similar_faces(self, embedding: np.ndarray, top_k: int = 3) -> list[dict]:
-        """
-        Search FAISS index for similar face embeddings.
-
-        Args:
-          embedding: 512-dim normalized face embedding
-          top_k: number of results to return
-
-        Returns:
-          [{"person_id": int, "similarity": float}, ...]
-        """
-        if self.faiss_index is None or len(self.person_ids) == 0:
-            return []
-
-        # Normalize embedding (L2)
-        norm = np.linalg.norm(embedding)
-        if norm > 0:
-            embedding = embedding / norm
-
-        # Search FAISS (IndexFlatIP does inner product = cosine on normalized vectors)
-        distances, indices = self.faiss_index.search(
-            embedding.reshape(1, -1),
-            min(top_k, len(self.person_ids))
-        )
-
-        results = []
-        for idx, distance in zip(indices[0], distances[0]):
-            if idx >= 0:  # -1 indicates no result
-                results.append({
-                    "person_id": int(self.person_ids[idx]),
-                    "similarity": float(distance)  # cosine similarity in [0, 1]
-                })
-
-        return results
-
-    def add_embedding_to_index(self, person_id: int, embedding: np.ndarray):
-        """Add a face embedding to the FAISS index"""
-        if embedding is None:
-            return
-
-        # Normalize
-        norm = np.linalg.norm(embedding)
-        if norm > 0:
-            embedding = embedding / norm
-
-        self.embeddings_db[person_id] = embedding
-        self._rebuild_faiss_index()
-
-    def _rebuild_faiss_index(self):
-        """Rebuild FAISS index from embeddings_db"""
-        if not self.embeddings_db:
-            self.faiss_index = None
-            self.person_ids = []
-            return
-
-        person_ids = sorted(self.embeddings_db.keys())
-        embeddings = np.array([self.embeddings_db[pid] for pid in person_ids])
-
-        # Create Flat index with inner product (cosine distance on normalized vectors)
-        self.faiss_index = faiss.IndexFlatIP(512)
-        self.faiss_index.add(embeddings.astype(np.float32))
-        self.person_ids = person_ids
-        LOGGER.info(f"FAISS index rebuilt with {len(person_ids)} embeddings")
-
-    def _load_faiss_index(self, path: str):
-        """Load FAISS index from disk"""
-        try:
-            self.faiss_index = faiss.read_index(path)
-            LOGGER.info(f"Loaded FAISS index from {path}")
-        except Exception as e:
-            LOGGER.warning(f"Failed to load FAISS index: {e}")
-
-
-class HeatmapGenerator:
-    """Generate crowd density heatmap from detection coordinates"""
-
-    def __init__(self, grid_size: tuple[int, int], frame_size: tuple[int, int]):
-        self.grid_h, self.grid_w = grid_size
-        self.frame_h, self.frame_w = frame_size
-        self.grid = np.zeros((self.grid_h, self.grid_w), dtype=np.float32)
-
-    def add_detections(self, detections: list[dict]):
-        """Add person detections to heatmap grid"""
-        for det in detections:
-            x = det["x"]
-            y = det["y"]
-            # Map frame coords to grid coords
-            grid_x = int((x / self.frame_w) * self.grid_w)
-            grid_y = int((y / self.frame_h) * self.grid_h)
-
-            # Clamp
-            grid_x = max(0, min(grid_x, self.grid_w - 1))
-            grid_y = max(0, min(grid_y, self.grid_h - 1))
-
-            self.grid[grid_y, grid_x] += 1
-
-    def get_normalized_heatmap(self) -> np.ndarray:
-        """Return normalized heatmap [0, 1]"""
-        max_val = np.max(self.grid)
-        if max_val <= 0:
-            return self.grid
-        return self.grid / max_val
-
-    def apply_gaussian_blur(self, sigma: float = 1.5):
-        """Apply Gaussian smoothing for visual heatmap"""
-        from scipy.ndimage import gaussian_filter
-        self.grid = gaussian_filter(self.grid, sigma=sigma)
-
-    def reset(self):
-        """Clear grid for next processing window"""
-        self.grid.fill(0)
-
-
-def calculate_risk_level(max_people: int, capacity: int = 40) -> str:
-    """Determine risk level based on occupancy"""
-    occupancy = (max_people / capacity) * 100
-    if occupancy < 80:
+# ============================================================================
+# RISK CLASSIFICATION
+# ============================================================================
+def classify_risk(person_count):
+    """Classify crowd risk based on person count"""
+    if person_count < RISK_THRESHOLDS['SAFE']:
         return 'SAFE'
-    elif occupancy < 95:
+    elif person_count < RISK_THRESHOLDS['MODERATE']:
         return 'MODERATE'
-    elif occupancy < 110:
+    elif person_count < RISK_THRESHOLDS['RISKY']:
         return 'RISKY'
     else:
         return 'CRITICAL'
 
+def get_risk_color(risk_level):
+    """Get BGR color for risk visualization"""
+    colors = {
+        'SAFE': (0, 255, 0),       # Green
+        'MODERATE': (0, 165, 255), # Orange
+        'RISKY': (0, 69, 255),     # Dark orange/red
+        'CRITICAL': (0, 0, 255)    # Red
+    }
+    return colors.get(risk_level, (255, 255, 255))
 
-def parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser(
-        description="YOLOv8n + InsightFace crowd and missing person detection"
-    )
-    parser.add_argument(
-        '--video',
-        type=str,
-        default='0',
-        help='Video source path or webcam index (default: 0)'
-    )
-    parser.add_argument(
-        '--output',
-        type=str,
-        default='',
-        help='Output video file path'
-    )
-    parser.add_argument(
-        '--json',
-        action='store_true',
-        help='Emit JSON summary to stdout'
-    )
-    parser.add_argument(
-        '--face-match',
-        action='store_true',
-        help='Enable face matching against missing persons DB'
-    )
-    parser.add_argument(
-        '--device',
-        type=str,
-        default='cuda:0',
-        help='CUDA device (default: cuda:0)'
-    )
-    parser.add_argument(
-        '--confidence',
-        type=float,
-        default=0.45,
-        help='YOLO detection confidence threshold'
-    )
-    parser.add_argument(
-        '--display',
-        action='store_true',
-        help='Display annotated frames in window'
-    )
-    return parser.parse_args()
+# ============================================================================
+# VIDEO PROCESSING
+# ============================================================================
+def process_video(video_path, output_path=None, device='cpu', skip_frames=3,
+                  output_json=False):
+    """
+    Process video file with YOLOv8, detect people, classify risk
 
+    Args:
+        video_path: Input video file path
+        output_path: Optional output video path (with annotations)
+        device: 'cuda' or 'cpu'
+        skip_frames: Process every Nth frame (default 3)
+        output_json: If True, print JSON to stdout
 
-def resolve_video_source(source: str) -> Union[int, str]:
-    if source.isdigit():
-        return int(source)
-    path = Path(source)
-    if not path.exists():
-        raise FileNotFoundError(f"Video file not found: {source}")
-    return str(path)
+    Returns:
+        dict: Processing results
+    """
 
+    # ========================================================================
+    # VALIDATION
+    # ========================================================================
+    video_file = Path(video_path)
+    if not video_file.exists():
+        log_error(f'Video file not found: {video_path}')
+        sys.exit(1)
 
-def initialize_video_writer(
-    output_path: str,
-    width: int,
-    height: int,
-    fps: float
-) -> cv2.VideoWriter | None:
-    if not output_path:
-        return None
-    output_file = Path(output_path)
-    output_file.parent.mkdir(parents=True, exist_ok=True)
-    fourcc = cv2.VideoWriter_fourcc(
-        *('XVID' if output_file.suffix.lower() == '.avi' else 'mp4v')
-    )
-    writer = cv2.VideoWriter(str(output_file), fourcc, fps or 20.0, (width, height))
-    if not writer.isOpened():
-        raise RuntimeError(f"Failed to open video writer for {output_path}")
-    return writer
+    log_info(f'Loading YOLOv8 model: {MODEL_NAME}')
+    try:
+        model = YOLO(MODEL_NAME)
+        # Move to device
+        if device == 'cuda':
+            model = model.to(device)
+            use_fp16 = torch.cuda.is_available()
+            log_info(f'YOLOv8 loaded on CUDA (FP16={use_fp16})')
+        else:
+            model = model.to('cpu')
+            log_info('YOLOv8 loaded on CPU')
+    except Exception as e:
+        log_error(f'Failed to load YOLOv8: {e}')
+        sys.exit(1)
 
+    # ========================================================================
+    # OPEN VIDEO
+    # ========================================================================
+    log_info(f'Opening video: {video_path}')
+    cap = cv2.VideoCapture(str(video_path))
 
-def run_detection(args: argparse.Namespace) -> dict:
-    """Main detection pipeline"""
-
-    # Initialize models
-    crowd_detector = PersonDetector(device=args.device)
-    face_pipeline = FaceRecognitionPipeline() if args.face_match else None
-
-    # Open video source
-    source = resolve_video_source(args.video)
-    LOGGER.info(f"Opening video source: {source}")
-    cap = cv2.VideoCapture(source)
     if not cap.isOpened():
-        raise RuntimeError(f"Unable to open video source: {args.video}")
+        log_error(f'Cannot open video file: {video_path}')
+        sys.exit(1)
 
-    width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH) or 1280)
-    height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT) or 720)
-    fps = cap.get(cv2.CAP_PROP_FPS) or 20.0
+    # Get video properties
+    fps = cap.get(cv2.CAP_PROP_FPS)
+    width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
+    height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
+    total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
 
-    # Initialize output
-    writer = initialize_video_writer(args.output, width, height, fps) if args.output else None
+    log_info(f'Video: {width}x{height} @ {fps:.1f}fps, {total_frames} frames')
 
-    # Initialize heatmap
-    heatmap_gen = HeatmapGenerator(HEATMAP_GRID_SIZE, (height, width))
+    # ========================================================================
+    # VIDEO WRITER (optional)
+    # ========================================================================
+    writer = None
+    if output_path:
+        fourcc = cv2.VideoWriter_fourcc(*'mp4v')
+        writer = cv2.VideoWriter(
+            output_path,
+            fourcc,
+            fps,
+            (width, height)
+        )
+        if not writer.isOpened():
+            log_error(f'Cannot create output video: {output_path}')
+        else:
+            log_info(f'Output video: {output_path}')
 
-    # Processing state
+    # ========================================================================
+    # PROCESS FRAMES
+    # ========================================================================
+    start_time = time.time()
     frame_count = 0
-    processed_frames = 0
-    cumulative_people = 0
-    max_people = 0
-    fps_history = deque(maxlen=30)
-    frame_times = []
-    face_matches = []
+    person_counts = []  # Track counts for statistics
 
     try:
         while True:
-            frame_start = time.time()
             ret, frame = cap.read()
             if not ret:
-                LOGGER.info("End of stream reached.")
                 break
 
             frame_count += 1
 
-            # =====================================================================
-            # CROWD DETECTION (every SKIP_FRAMES_CROWD)
-            # =====================================================================
-            if frame_count % SKIP_FRAMES_CROWD == 0:
-                person_count, detections = crowd_detector.detect(
+            # Skip frames based on --skip parameter
+            if frame_count % skip_frames != 0:
+                continue
+
+            # Detect people
+            try:
+                results = model.predict(
                     frame,
-                    conf=args.confidence,
-                    half=True
+                    classes=[PERSON_CLASS],
+                    conf=CONF_THRESHOLD,
+                    iou=IOU_THRESHOLD,
+                    verbose=False,
+                    device=device if device == 'cuda' else None
                 )
-                cumulative_people += person_count
-                max_people = max(max_people, person_count)
-                processed_frames += 1
+            except Exception as e:
+                log_error(f'Detection failed at frame {frame_count}: {e}')
+                continue
 
-                # Add to heatmap
-                heatmap_gen.add_detections(detections)
-            else:
-                person_count = 0
-                detections = []
+            # Count people in this frame
+            person_count = len(results[0].boxes) if results[0].boxes is not None else 0
+            person_counts.append(person_count)
 
-            # =====================================================================
-            # FACE MATCHING (every SKIP_FRAMES_FACE, only if enabled)
-            # =====================================================================
-            if args.face_match and frame_count % SKIP_FRAMES_FACE == 0 and face_pipeline:
-                face_results = face_pipeline.detect_faces(frame)
-                for face_data in face_results:
-                    embedding = face_data["embedding"]
-                    matches = face_pipeline.search_similar_faces(embedding, top_k=3)
+            # Classify risk
+            risk_level = classify_risk(person_count)
+            risk_color = get_risk_color(risk_level)
 
-                    if matches and matches[0]["similarity"] > FACE_MATCH_THRESHOLD:
-                        face_matches.append({
-                            "frameNumber": frame_count,
-                            "personId": matches[0]["person_id"],
-                            "confidence": matches[0]["similarity"],
-                            "status": "POSSIBLE_MATCH"
-                        })
+            # Draw bounding boxes on frame
+            if results[0].boxes is not None:
+                for box in results[0].boxes:
+                    x1, y1, x2, y2 = map(int, box.xyxy[0])
+                    cv2.rectangle(frame, (x1, y1), (x2, y2), risk_color, 2)
 
-            # =====================================================================
-            # VISUALIZATION & TIMING
-            # =====================================================================
-            annotated_frame = frame.copy()
-
-            # Draw person count
-            risk = calculate_risk_level(max_people) if max_people > 0 else 'SAFE'
-            risk_color = {
-                'SAFE': (0, 255, 0),
-                'MODERATE': (0, 255, 255),
-                'RISKY': (0, 165, 255),
-                'CRITICAL': (0, 0, 255)
-            }.get(risk, (128, 128, 128))
-
+            # Draw text overlay
+            text = f'People: {person_count} | Risk: {risk_level}'
             cv2.putText(
-                annotated_frame,
-                f"Persons: {max_people}",
-                (20, 60),
-                cv2.FONT_HERSHEY_SIMPLEX,
-                1.5,
-                risk_color,
-                4
-            )
-            cv2.putText(
-                annotated_frame,
-                f"Risk: {risk}",
-                (20, 120),
+                frame, text,
+                (10, 30),
                 cv2.FONT_HERSHEY_SIMPLEX,
                 1.0,
                 risk_color,
-                3
-            )
-            cv2.putText(
-                annotated_frame,
-                f"Frame: {frame_count}",
-                (20, 170),
-                cv2.FONT_HERSHEY_SIMPLEX,
-                0.8,
-                (255, 255, 255),
                 2
             )
 
+            # Write frame to output video
             if writer:
-                writer.write(annotated_frame)
+                writer.write(frame)
 
-            if args.display:
-                cv2.imshow('YOLOv8n Detection', annotated_frame)
-                if cv2.waitKey(1) & 0xFF == ord('q'):
-                    LOGGER.info("User requested exit.")
-                    break
+            # Emit progress (every 10 frames)
+            if frame_count % (skip_frames * 10) == 0:
+                progress_pct = int((frame_count / total_frames) * 100)
+                print(f'PROGRESS:{progress_pct}', flush=True)
+                log_info(f'Progress: {progress_pct}% ({frame_count}/{total_frames} frames)')
 
-            # FPS tracking
-            frame_elapsed = time.time() - frame_start
-            if frame_elapsed > 0:
-                frame_fps = 1.0 / frame_elapsed
-                fps_history.append(frame_fps)
-                frame_times.append(frame_elapsed)
+        # ====================================================================
+        # CLEANUP & STATISTICS
+        # ====================================================================
+        cap.release()
+        if writer:
+            writer.release()
 
-            # Progress reporting (for Node.js job queue)
-            if frame_count % 30 == 0:
-                progress = int((frame_count * 100) / (cap.get(cv2.CAP_PROP_FRAME_COUNT)))
-                print(f"PROGRESS:{progress}", flush=True)
-                LOGGER.info(f"Progress: {progress}%")
+        elapsed = time.time() - start_time
+
+        # Calculate statistics
+        if person_counts:
+            avg_people = np.mean(person_counts)
+            max_people = int(np.max(person_counts))
+            min_people = int(np.min(person_counts))
+        else:
+            avg_people = 0
+            max_people = 0
+            min_people = 0
+
+        overall_risk = classify_risk(max_people)
+        frames_processed = len(person_counts) * skip_frames  # Actual frames analyzed
+        avg_fps = frames_processed / elapsed if elapsed > 0 else 0
+
+        # ====================================================================
+        # BUILD RESULTS
+        # ====================================================================
+        results_data = {
+            'totalPeople': max_people,
+            'avgPeoplePerFrame': round(avg_people, 1),
+            'totalFrames': int(total_frames),
+            'maxPeople': max_people,
+            'minPeople': min_people,
+            'riskLevel': overall_risk,
+            'averageFPS': round(avg_fps, 1),
+            'processingTimeSeconds': round(elapsed, 1),
+            'frameWidth': int(width),
+            'frameHeight': int(height),
+            'videoSource': str(video_path),
+            'timestamp': datetime.utcnow().isoformat() + 'Z',
+            'outputVideoPath': output_path if writer else None
+        }
+
+        # ====================================================================
+        # OUTPUT RESULTS
+        # ====================================================================
+        if output_json:
+            # Print ONLY JSON as last output (Node.js requirement)
+            print(json.dumps(results_data), flush=True)
+        else:
+            log_info(f'Processing complete: {overall_risk} ({max_people} people)')
+
+        return results_data
+
+    except Exception as e:
+        log_error(f'Fatal error during processing: {e}')
+        sys.exit(1)
 
     finally:
         cap.release()
         if writer:
             writer.release()
-        if args.display:
-            cv2.destroyAllWindows()
 
-    # =========================================================================
-    # FINAL STATISTICS
-    # =========================================================================
-    avg_people = (cumulative_people / processed_frames) if processed_frames > 0 else 0
-    risk_level = calculate_risk_level(max_people)
-
-    # FPS metrics
-    if frame_times:
-        overall_avg_fps = len(frame_times) / sum(frame_times)
-        overall_min_fps = np.min(frame_times)
-        overall_max_fps = np.max(frame_times)
-        overall_min_fps = 1.0 / overall_min_fps if overall_min_fps > 0 else 0
-        overall_max_fps = 1.0 / overall_max_fps if overall_max_fps > 0 else 0
-    else:
-        overall_avg_fps = 0.0
-        overall_min_fps = 0.0
-        overall_max_fps = 0.0
-
-    # FPS rating
-    if overall_avg_fps >= 25:
-        fps_rating = "Excellent (Professional)"
-    elif overall_avg_fps >= 20:
-        fps_rating = "Very Good"
-    elif overall_avg_fps >= 15:
-        fps_rating = "Good"
-    elif overall_avg_fps >= 10:
-        fps_rating = "Acceptable"
-    else:
-        fps_rating = "Poor"
-
-    # Heatmap normalization
-    heatmap_gen.apply_gaussian_blur(sigma=1.5)
-    heatmap_normalized = heatmap_gen.get_normalized_heatmap()
-    heatmap_grid = heatmap_normalized.tolist()
-
-    results = {
-        'totalPeople': int(max_people),
-        'avgPeoplePerFrame': float(round(avg_people, 2)),
-        'totalFrames': int(frame_count),
-        'processedFrames': int(processed_frames),
-        'riskLevel': str(risk_level),
-        'averageFPS': float(round(overall_avg_fps, 2)),
-        'minFPS': float(round(overall_min_fps, 2)),
-        'maxFPS': float(round(overall_max_fps, 2)),
-        'fpsRating': str(fps_rating),
-        'crowdHeatmapGrid': heatmap_grid,
-        'faceMatches': face_matches
-    }
-
-    LOGGER.info(f"Detection complete: {results}")
-    return results
-
-
-def main() -> int:
-    args = parse_args()
-
-    # Configure logging
-    log_level = logging.WARNING if args.json else logging.INFO
-    logging.basicConfig(
-        level=log_level,
-        format='[%(levelname)s] %(message)s'
+# ============================================================================
+# CLI
+# ============================================================================
+def main():
+    parser = argparse.ArgumentParser(
+        description='CrowdSafe YOLOv8 Crowd Detection'
+    )
+    parser.add_argument(
+        '--video',
+        type=str,
+        required=True,
+        help='Input video file path'
+    )
+    parser.add_argument(
+        '--output',
+        type=str,
+        default=None,
+        help='Optional output video path (with annotations)'
+    )
+    parser.add_argument(
+        '--device',
+        type=str,
+        choices=['cuda', 'cpu'],
+        default='cuda' if torch.cuda.is_available() else 'cpu',
+        help='Device: cuda or cpu (auto-detect by default)'
+    )
+    parser.add_argument(
+        '--skip',
+        type=int,
+        default=3,
+        help='Process every Nth frame (default 3)'
+    )
+    parser.add_argument(
+        '--json',
+        action='store_true',
+        help='Output results as JSON to stdout'
     )
 
+    args = parser.parse_args()
+
     try:
-        results = run_detection(args)
-    except Exception as exc:
-        LOGGER.error(f"Detection failed: {exc}", exc_info=True)
-        if args.json:
-            print(json.dumps({'error': str(exc)}))
-        return 1
-
-    if args.json:
-        print(json.dumps(results))
-    else:
-        print("\n" + "=" * 60)
-        print("DETECTION SUMMARY")
-        print("=" * 60)
-        print(f"Frames processed: {results['totalFrames']}")
-        print(f"Max people in frame: {results['totalPeople']}")
-        print(f"Avg people per frame: {results['avgPeoplePerFrame']:.2f}")
-        print(f"Risk level: {results['riskLevel']}")
-        print(f"\nPerformance: {results['averageFPS']:.2f} FPS ({results['fpsRating']})")
-        if results.get('faceMatches'):
-            print(f"\nFace matches found: {len(results['faceMatches'])}")
-            for match in results['faceMatches']:
-                print(f"  - Person ID {match['personId']}: {match['confidence']:.2%}")
-        print("=" * 60 + "\n")
-
-    return 0
-
+        process_video(
+            video_path=args.video,
+            output_path=args.output,
+            device=args.device,
+            skip_frames=args.skip,
+            output_json=args.json
+        )
+    except Exception as e:
+        log_error(f'Unexpected error: {e}')
+        sys.exit(1)
 
 if __name__ == '__main__':
-    sys.exit(main())
+    main()
+

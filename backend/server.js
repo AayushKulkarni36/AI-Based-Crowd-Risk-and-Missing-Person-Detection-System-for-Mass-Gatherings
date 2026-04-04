@@ -11,6 +11,7 @@ import authRoutes from './routes/auth.routes.js';
 import videoRoutes from './routes/video.routes.js';
 import personRoutes from './routes/person.routes.js';
 import statsRoutes from './routes/stats.routes.js';
+import facematchRoutes from './routes/facematch.routes.js';
 import errorHandler from './middleware/error.js';
 import initializeSocketIO from './socket.js';
 import logger from './utils/logger.js';
@@ -67,6 +68,7 @@ app.use('/api/auth', authRoutes);
 app.use('/api/video', videoRoutes);
 app.use('/api/persons', personRoutes);
 app.use('/api/stats', statsRoutes);
+app.use('/api/facematch', facematchRoutes);
 
 // Health check
 app.get('/api/health', (req, res) => {

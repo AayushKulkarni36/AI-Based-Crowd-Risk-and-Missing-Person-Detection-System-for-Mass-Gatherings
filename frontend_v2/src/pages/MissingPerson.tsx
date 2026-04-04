@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { UserPlus, Search, AlertTriangle, CheckCircle, Download } from 'lucide-react';
+import { UserPlus, Search, CheckCircle } from 'lucide-react';
 import UploadCard from '../components/UploadCard';
 import { api, VideoStatus } from '../services/api';
 import clsx from 'clsx';
@@ -22,10 +22,6 @@ export default function MissingPerson() {
 
     // We derive alerts from the current status
     const currentStatus = currentVideoId ? activePersonVideos.get(currentVideoId) : null;
-    const foundAlerts = new Set<string>();
-    if (currentStatus?.found_persons) {
-        currentStatus.found_persons.forEach(p => foundAlerts.add(p.name));
-    }
 
     const pollTimer = useRef<number | null>(null);
 
@@ -34,12 +30,12 @@ export default function MissingPerson() {
 
         pollTimer.current = window.setInterval(async () => {
             try {
-                const data = await api.getStatus(id);
+                const data = await api.getVideoResults(parseInt(id));
                 updatePersonVideoStatus(id, data);
 
-                if (data.status === 'done' || data.status === 'failed') {
+                if (data.status === 'COMPLETED' || data.status === 'FAILED') {
                     if (pollTimer.current) clearInterval(pollTimer.current);
-                    if (data.status === 'done') refreshPersons();
+                    if (data.status === 'COMPLETED') refreshPersons();
                 }
             } catch (err) {
                 console.error(err);
@@ -49,7 +45,7 @@ export default function MissingPerson() {
 
     useEffect(() => {
         // Resume polling if active
-        if (currentVideoId && currentStatus && currentStatus.status === 'processing') {
+        if (currentVideoId && currentStatus && currentStatus.status === 'PROCESSING') {
             startPolling(currentVideoId);
         }
         return () => {
@@ -59,7 +55,11 @@ export default function MissingPerson() {
 
     const handleVideoUpload = (id: string) => {
         setCurrentVideoId(id);
-        const initial: VideoStatus = { ready: false, status: 'processing', video_id: id, found_persons: [], download_url: null };
+        const initial: VideoStatus = {
+            success: true,
+            status: 'PROCESSING',
+            progress: 0
+        };
         updatePersonVideoStatus(id, initial);
         startPolling(id);
     };
@@ -140,21 +140,21 @@ export default function MissingPerson() {
                 <div className="lg:col-span-2 space-y-6">
                     <h3 className="text-lg font-semibold text-white px-2">2. Live Analysis Results</h3>
 
-                    {/* ALERT BANNER */}
+                    {/* PROGRESS / STATUS DISPLAY */}
                     <AnimatePresence>
-                        {foundAlerts.size > 0 && (
+                        {currentStatus && currentStatus.status === 'PROCESSING' && (
                             <motion.div
                                 initial={{ scale: 0.9, opacity: 0 }}
                                 animate={{ scale: 1, opacity: 1 }}
-                                className="bg-red-500/20 border border-red-500 rounded-xl p-6 flex items-center gap-4 animate-pulse backdrop-blur-md"
+                                className="bg-blue-500/20 border border-blue-500 rounded-xl p-6 flex items-center gap-4 backdrop-blur-md"
                             >
-                                <div className="w-12 h-12 bg-red-500 rounded-full flex items-center justify-center shrink-0 shadow-lg shadow-red-500/20">
-                                    <AlertTriangle className="w-6 h-6 text-white" />
+                                <div className="w-12 h-12 bg-blue-500 rounded-full flex items-center justify-center shrink-0 shadow-lg shadow-blue-500/20 animate-spin">
+                                    <div className="w-6 h-6 border-2 border-white border-t-transparent rounded-full" />
                                 </div>
                                 <div>
-                                    <h2 className="text-2xl font-bold text-white mb-1">MATCH DETECTED</h2>
-                                    <p className="text-red-200 text-lg">
-                                        Confirmed identity: <span className="font-bold underline">{Array.from(foundAlerts).join(', ')}</span>
+                                    <h2 className="text-xl font-bold text-white mb-1">Processing Video</h2>
+                                    <p className="text-blue-200 text-sm">
+                                        Progress: {currentStatus.progress || 0}%
                                     </p>
                                 </div>
                             </motion.div>
@@ -163,20 +163,20 @@ export default function MissingPerson() {
 
                     {/* Video Player Area */}
                     <div className="card min-h-[500px] flex flex-col justify-center items-center bg-black relative p-0 overflow-hidden shadow-2xl border-slate-800">
-                        {currentStatus?.status === 'done' && currentStatus.download_url ? (
+                        {currentStatus?.status === 'COMPLETED' && currentStatus.results?.outputVideoPath ? (
                             <video
-                                src={`http://localhost:8000${currentStatus.download_url}`}
+                                src={`http://localhost:5000/results/${currentStatus.results.outputVideoPath.split('/').pop()}`}
                                 controls
                                 className="w-full h-full object-contain"
                             />
                         ) : (
                             <div className="flex flex-col items-center text-slate-500 space-y-4">
-                                {currentStatus?.status === 'processing' ? (
+                                {currentStatus?.status === 'PROCESSING' ? (
                                     <div className="text-center relative">
                                         <div className="absolute inset-0 bg-brand-primary/20 blur-xl rounded-full"></div>
                                         <div className="w-16 h-16 border-4 border-brand-primary border-t-transparent rounded-full animate-spin mx-auto mb-4 relative z-10" />
-                                        <p className="text-brand-primary font-medium">Scanning vectors...</p>
-                                        <p className="text-sm">Comparing 512-d embeddings against database</p>
+                                        <p className="text-brand-primary font-medium">Analyzing video...</p>
+                                        <p className="text-sm">Detecting people and generating analysis</p>
                                     </div>
                                 ) : (
                                     <>
@@ -188,14 +188,25 @@ export default function MissingPerson() {
                         )}
                     </div>
 
-                    {/* Actions */}
-                    <div className="flex justify-end">
-                        {currentStatus?.status === 'done' && currentStatus.download_url && (
-                            <a href={`http://localhost:8000${currentStatus.download_url}?download=true`} download className="btn-primary">
-                                <Download className="w-4 h-4" /> Download Evidence
-                            </a>
-                        )}
-                    </div>
+                    {/* Results Summary */}
+                    {currentStatus?.status === 'COMPLETED' && currentStatus.results && (
+                        <div className="grid grid-cols-2 gap-4">
+                            <div className="card">
+                                <p className="text-slate-400 text-sm">Total People Detected</p>
+                                <p className="text-2xl font-bold text-white">{currentStatus.results.totalPeople || 0}</p>
+                            </div>
+                            <div className="card">
+                                <p className="text-slate-400 text-sm">Risk Level</p>
+                                <p className={`text-2xl font-bold ${currentStatus.results.riskLevel === 'CRITICAL' ? 'text-red-500' :
+                                        currentStatus.results.riskLevel === 'RISKY' ? 'text-orange-500' :
+                                            currentStatus.results.riskLevel === 'MODERATE' ? 'text-yellow-500' :
+                                                'text-green-500'
+                                    }`}>
+                                    {currentStatus.results.riskLevel || 'UNKNOWN'}
+                                </p>
+                            </div>
+                        </div>
+                    )}
                 </div>
             </div>
         </div>

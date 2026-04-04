@@ -167,6 +167,45 @@ export const api = {
     }
   },
 
+  // ── Face Matching API ──────────────────────────────────────────────────────
+
+  runFaceMatch: async (jobId: number): Promise<{ success: boolean; matches: any[]; totalMatches: number }> => {
+    const res = await fetch(`${API_BASE}/facematch/run`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', ...authHeader() },
+      body: JSON.stringify({ jobId }),
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || `Face matching failed (${res.status})`);
+    return data;
+  },
+
+  getMatchResults: async (jobId: number): Promise<{ success: boolean; matches: any[] }> => {
+    const res = await fetch(`${API_BASE}/facematch/${jobId}`, { headers: authHeader() });
+    if (!res.ok) throw new Error('Failed to fetch match results');
+    return await res.json();
+  },
+
+  confirmMatch: async (matchId: number): Promise<{ success: boolean }> => {
+    const res = await fetch(`${API_BASE}/facematch/${matchId}/confirm`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json', ...authHeader() },
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || 'Failed to confirm match');
+    return data;
+  },
+
+  dismissMatch: async (matchId: number): Promise<{ success: boolean }> => {
+    const res = await fetch(`${API_BASE}/facematch/${matchId}`, {
+      method: 'DELETE',
+      headers: authHeader(),
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || 'Failed to dismiss match');
+    return data;
+  },
+
   // Convenience: build photo URL from photo_path stored in DB
   getPhotoUrl: (photoPath: string | null | undefined): string | null => {
     if (!photoPath) return null;

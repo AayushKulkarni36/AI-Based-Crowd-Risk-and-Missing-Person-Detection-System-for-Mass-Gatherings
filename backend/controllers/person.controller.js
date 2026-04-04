@@ -44,42 +44,72 @@ export async function addPerson(req, res, next) {
        RETURNING id, name, age, gender, description, photo_path, status, reported_date,
                  last_seen_location, contact_info`,
       [name, age || null, gender || null, description || null,
-       last_seen_location || null, contact_info || null, photo_path]
+        last_seen_location || null, contact_info || null, photo_path]
     );
 
     const person = result.rows[0];
 
     // Attempt face enrollment — non-blocking, failure is OK
     let faceEnrolled = false;
-    if (req.file && FACE_API_URL) {
+    let faceError = null;
+    if (req.file) {
       try {
-        const FormData = (await import('form-data')).default;
-        const fs = (await import('fs')).default;
-        const form = new FormData();
-        form.append('person_id', String(person.id));
-        form.append('name', person.name);
-        form.append('image', fs.createReadStream(req.file.path), {
-          filename: req.file.originalname,
-          contentType: req.file.mimetype
+        const { spawn } = await import('child_process');
+        const nodePath = (await import('path')).default;
+        const pythonPath = process.env.PYTHON_PATH || nodePath.join(__dirname, '../../venv/Scripts/python.exe');
+        const enrollScript = nodePath.join(__dirname, '../../src/face_recognition/enroll.py');
+
+        let enrollOutput = '';
+        let enrollError = '';
+
+        const enrollProc = spawn(pythonPath, [enrollScript, '--image', req.file.path]);
+
+        enrollProc.stdout.on('data', (data) => {
+          enrollOutput += data.toString();
         });
 
-        const enrollResponse = await axios.post(`${FACE_API_URL}/face/enroll`, form, {
-          headers: form.getHeaders(),
-          timeout: 30000
+        enrollProc.stderr.on('data', (data) => {
+          enrollError += data.toString();
         });
 
-        if (enrollResponse.data?.embedding) {
-          // Store embedding in DB
-          await pool.query(
-            'UPDATE missing_persons SET embedding = $1 WHERE id = $2',
-            [Buffer.from(JSON.stringify(enrollResponse.data.embedding)), person.id]
-          );
-          faceEnrolled = true;
-        }
-        logger.info(`Face enrolled for person ${person.id}`);
+        enrollProc.on('close', async (code) => {
+          if (code === 0 && enrollOutput) {
+            try {
+              const enrollData = JSON.parse(enrollOutput.trim());
+              if (enrollData.success && enrollData.embedding) {
+                // Store embedding (as array of floats) in DB using pgvector
+                const embeddingArray = enrollData.embedding;
+                await pool.query(
+                  `UPDATE missing_persons
+                   SET face_vector = $1::vector,
+                       embedding_model = 'facenet',
+                       embedding_created_at = NOW()
+                   WHERE id = $2`,
+                  [JSON.stringify(embeddingArray), person.id]
+                );
+                faceEnrolled = true;
+                logger.info(`Face enrolled for person ${person.id}`);
+              } else if (!enrollData.success) {
+                faceError = enrollData.error || 'No face detected in image';
+                logger.warn(`Face enrollment skipped for person ${person.id}: ${faceError}`);
+              }
+            } catch (parseErr) {
+              logger.warn(`Failed to parse face enrollment output: ${parseErr.message}`);
+              faceError = 'Failed to process face enrollment';
+            }
+          } else if (code !== 0) {
+            faceError = `Python error: ${enrollError.slice(-200)}`;
+            logger.warn(`Face enrollment process failed: ${faceError}`);
+          }
+        });
+
+        enrollProc.on('error', (err) => {
+          faceError = `Failed to spawn enroll process: ${err.message}`;
+          logger.warn(faceError);
+        });
       } catch (faceErr) {
+        faceError = faceErr.message;
         logger.warn(`Face enrollment failed for person ${person.id}: ${faceErr.message}`);
-        // Do NOT block registration — person still created successfully
       }
     }
 
@@ -87,9 +117,10 @@ export async function addPerson(req, res, next) {
       success: true,
       person,
       faceEnrolled,
+      faceError: faceError || null,
       message: faceEnrolled
         ? 'Person registered and face enrolled'
-        : 'Person registered (face enrollment skipped)'
+        : `Person registered ${faceError ? `(face error: ${faceError})` : '(face enrollment skipped)'}`
     });
   } catch (error) {
     logger.error('addPerson failed:', error.message);

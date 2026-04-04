@@ -1,6 +1,7 @@
 import { spawn } from 'child_process';
 import path from 'path';
 import { fileURLToPath } from 'url';
+import readline from 'readline';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -11,61 +12,102 @@ function resolvePythonPath() {
   return path.join(__dirname, '../../venv', process.platform === 'win32' ? 'Scripts/python.exe' : 'bin/python');
 }
 
-export function runYOLODetection(videoPath, outputPath) {
+/**
+ * Run YOLOv8 crowd detection on video
+ * @param {string} videoPath - Path to input video
+ * @param {string} outputPath - Path to save annotated output (optional)
+ * @param {Function} onProgress - Callback for progress updates (percent: 0-100)
+ * @returns {Promise<Object>} Results JSON from Python
+ */
+export function runYOLODetection(videoPath, outputPath = null, onProgress = null) {
   return new Promise((resolve, reject) => {
-    const pythonPath = path.join(__dirname, '../../venv/Scripts/python.exe');
+    const pythonPath = process.env.PYTHON_PATH ||
+      path.join(__dirname, '../../venv/Scripts/python.exe');
     const scriptPath = path.join(__dirname, '../../src/crowd_detection/testSimple.py');
 
-    const args = ['--video', videoPath, '--output', outputPath, '--json'];
-    const python = spawn(pythonPath, [scriptPath, ...args]);
+    // Build arguments
+    const args = [scriptPath, '--video', videoPath];
+    if (outputPath) {
+      args.push('--output', outputPath);
+    }
+    args.push('--json');
 
-    let stdout = '';
+    const python = spawn(pythonPath, args, {
+      cwd: path.dirname(scriptPath),
+      stdio: ['inherit', 'pipe', 'pipe']
+    });
+
+    let jsonBuffer = '';
     let stderr = '';
+    let lastJsonLine = '';
 
-    python.stdout.on('data', (data) => {
-      stdout += data.toString();
-      console.log(`Python: ${data}`);
+    // Setup readline for line-by-line stdout processing
+    const rl = readline.createInterface({
+      input: python.stdout,
+      crlfDelay: Infinity
+    });
+
+    // Process each line from Python
+    rl.on('line', (line) => {
+      // Check for PROGRESS lines
+      if (line.startsWith('PROGRESS:')) {
+        const percent = parseInt(line.split(':')[1], 10);
+        if (!isNaN(percent) && onProgress) {
+          onProgress(percent);
+        }
+      }
+      // Check for JSON in line
+      else if (line.trim().startsWith('{')) {
+        lastJsonLine = line;
+        jsonBuffer = line;
+      }
+    });
+
+    rl.on('close', () => {
+      // Cleanup
     });
 
     python.stderr.on('data', (data) => {
       stderr += data.toString();
-      console.error(`Python error: ${data}`);
     });
 
+    // Timeout after 15 minutes
+    const timeout = setTimeout(() => {
+      python.kill('SIGTERM');
+      reject(new Error('Python processing timeout after 15 minutes'));
+    }, 15 * 60 * 1000);
+
     python.on('close', (code) => {
+      clearTimeout(timeout);
+
       if (code !== 0) {
         reject(new Error(`Python exited with code ${code}: ${stderr}`));
-      } else {
-        try {
-          // Extract JSON from stdout (filter out PRO TIP and other messages)
-          const jsonMatch = stdout.match(/\{[^{}]*"totalPeople"[^{}]*\}/);
-
-          if (jsonMatch) {
-            const result = JSON.parse(jsonMatch[0]);
-            resolve(result);
-          } else {
-            console.error('No JSON found in output:', stdout);
-            // Fallback
-            resolve({
-              totalPeople: 0,
-              avgPeoplePerFrame: 0,
-              totalFrames: 0,
-              maxPeople: 0,
-              riskLevel: 'UNKNOWN'
-            });
-          }
-        } catch (e) {
-          console.error('Failed to parse JSON output from Python:', e);
-          // Fallback
-          resolve({
-            totalPeople: 0,
-            avgPeoplePerFrame: 0,
-            totalFrames: 0,
-            maxPeople: 0,
-            riskLevel: 'UNKNOWN'
-          });
-        }
+        return;
       }
+
+      // Parse JSON from buffer
+      if (jsonBuffer) {
+        try {
+          const result = JSON.parse(jsonBuffer);
+          resolve(result);
+        } catch (e) {
+          reject(new Error(`Failed to parse JSON from Python: ${e.message}`));
+        }
+      } else if (lastJsonLine) {
+        try {
+          const result = JSON.parse(lastJsonLine);
+          resolve(result);
+        } catch (e) {
+          reject(new Error(`Failed to parse last JSON line: ${e.message}`));
+        }
+      } else {
+        reject(new Error('No JSON output from Python script'));
+      }
+    });
+
+    python.on('error', (err) => {
+      clearTimeout(timeout);
+      reject(new Error(`Failed to spawn Python process: ${err.message}`));
     });
   });
 }
