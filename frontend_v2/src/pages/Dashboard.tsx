@@ -4,6 +4,7 @@ import { StatCard, RiskBadge } from '../components/ui/Cards';
 import { Card, Button, ProgressBar } from '../components/ui/Common';
 import { useSocket } from '../hooks/useSocket';
 import { useState, useEffect, useCallback } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
 import { cn } from '../lib/utils';
 import { api, StatsOverview, AlertLog } from '../services/api';
@@ -61,6 +62,7 @@ function formatRelativeTime(isoString: string): string {
 }
 
 export default function Dashboard() {
+  const navigate = useNavigate();
   const { isConnected, queueStats } = useSocket();
   const [stats, setStats] = useState<StatsOverview | null>(null);
   const [alerts, setAlerts] = useState<AlertLog[]>([]);
@@ -122,7 +124,7 @@ export default function Dashboard() {
             <StatCard icon={<AlertTriangle />} label="Critical Alerts Today" value={stats?.criticalAlertsToday ?? 0} color="red" />
             <StatCard icon={<CheckCircle2 />} label="Found Persons" value={stats?.foundPersons ?? 0} color="emerald" />
             <StatCard icon={<TrendingUp />} label="Total Face Matches" value={stats?.totalFaceMatches ?? 0} color="secondary" />
-            <StatCard icon={<Activity />} label="Queue Status" value={queueStats.waiting + queueStats.active} color="primary" />
+            <StatCard icon={<Activity />} label="Queue Status" value={isNaN(queueStats.waiting + queueStats.active) ? 0 : queueStats.waiting + queueStats.active} color="primary" />
           </>
         )}
       </motion.div>
@@ -169,22 +171,22 @@ export default function Dashboard() {
 
       {/* Action Cards */}
       <motion.div variants={item} className="grid grid-cols-1 md:grid-cols-2 gap-6">
-        <Card className="hover:border-brand-accent/50 cursor-pointer">
+        <Card className="hover:border-brand-accent/50 cursor-pointer" onClick={() => navigate('/crowd')}>
           <div className="flex items-start justify-between">
             <div>
               <h3 className="text-lg font-bold text-white mb-2">Upload Video</h3>
               <p className="text-slate-400 text-sm mb-4">Upload footage for crowd risk analysis and missing person detection.</p>
-              <Button variant="primary" size="sm">Start Analysis</Button>
+              <Button variant="primary" size="sm" type="button">Start Analysis</Button>
             </div>
             <Video className="w-8 h-8 text-brand-accent opacity-20" />
           </div>
         </Card>
-        <Card className="hover:border-brand-accent/50 cursor-pointer">
+        <Card className="hover:border-brand-accent/50 cursor-pointer" onClick={() => navigate('/missing-persons')}>
           <div className="flex items-start justify-between">
             <div>
               <h3 className="text-lg font-bold text-white mb-2">Missing Persons</h3>
               <p className="text-slate-400 text-sm mb-4">Manage missing person database and face enrollment for matching.</p>
-              <Button variant="primary" size="sm">View Database</Button>
+              <Button variant="primary" size="sm" type="button">View Database</Button>
             </div>
             <Users className="w-8 h-8 text-brand-accent opacity-20" />
           </div>

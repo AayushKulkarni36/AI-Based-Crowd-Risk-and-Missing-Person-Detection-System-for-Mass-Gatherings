@@ -15,7 +15,7 @@ export default function Navbar() {
     const [isUserMenuOpen, setIsUserMenuOpen] = useState(false);
 
     const navItems = [
-        { name: t('nav.dashboard'), path: '/', icon: Shield },
+        { name: t('nav.dashboard'), path: '/dashboard', icon: Shield },
         { name: t('nav.crowd'), path: '/crowd', icon: Users },
         { name: t('nav.missing'), path: '/missing-persons', icon: Eye },
         { name: t('nav.alerts'), path: '/alerts', icon: Bell },

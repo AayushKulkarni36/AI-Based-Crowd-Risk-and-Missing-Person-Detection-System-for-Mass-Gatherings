@@ -54,7 +54,7 @@ function App() {
                                             <Routes>
                                                 <Route path="/" element={<Navigate to="/dashboard" replace />} />
                                                 <Route path="/dashboard" element={<Dashboard />} />
-                                                <Route path="/crowd-detection" element={<CrowdDetection />} />
+                                                <Route path="/crowd" element={<CrowdDetection />} />
                                                 <Route path="/missing-persons" element={<MissingPersons />} />
                                                 <Route path="/alerts" element={<Alerts />} />
 
