@@ -5,109 +5,117 @@ import readline from 'readline';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
-function resolvePythonPath() {
-  if (process.env.PYTHON_PATH) {
-    return process.env.PYTHON_PATH;
-  }
-  return path.join(__dirname, '../../venv', process.platform === 'win32' ? 'Scripts/python.exe' : 'bin/python');
-}
-
 /**
- * Run YOLOv8 crowd detection on video
- * @param {string} videoPath - Path to input video
- * @param {string} outputPath - Path to save annotated output (optional)
- * @param {Function} onProgress - Callback for progress updates (percent: 0-100)
- * @returns {Promise<Object>} Results JSON from Python
+ * Spawn Python process for video analysis
+ * @param {string} videoPath - Path to video file
+ * @param {Function} onProgress - Callback(percent) for PROGRESS:N lines
+ * @returns {Promise<Object>} Parsed JSON results
  */
-export function runYOLODetection(videoPath, outputPath = null, onProgress = null) {
+export function spawnPythonProcess(videoPath, onProgress = null) {
   return new Promise((resolve, reject) => {
-    const pythonPath = process.env.PYTHON_PATH ||
+    // Resolve Python executable
+    const pythonPath = process.env.PYTHON_EXEC ||
       path.join(__dirname, '../../venv/Scripts/python.exe');
+
     const scriptPath = path.join(__dirname, '../../src/crowd_detection/testSimple.py');
 
     // Build arguments
-    const args = [scriptPath, '--video', videoPath];
-    if (outputPath) {
-      args.push('--output', outputPath);
-    }
-    args.push('--json');
+    const args = [
+      scriptPath,
+      '--video', path.resolve(videoPath),
+      '--json',
+      '--skip', process.env.SKIP_FRAMES || '3'
+    ];
 
-    const python = spawn(pythonPath, args, {
-      cwd: path.dirname(scriptPath),
-      stdio: ['inherit', 'pipe', 'pipe']
+    console.log(`[Python] Spawning: ${pythonPath} ${args.join(' ')}`);
+
+    const proc = spawn(pythonPath, args, {
+      stdio: ['ignore', 'pipe', 'pipe']
     });
 
-    let jsonBuffer = '';
+    let lastJson = null;
     let stderr = '';
-    let lastJsonLine = '';
+    let timedOut = false;
 
-    // Setup readline for line-by-line stdout processing
+    // Read stdout line-by-line
     const rl = readline.createInterface({
-      input: python.stdout,
+      input: proc.stdout,
       crlfDelay: Infinity
     });
 
-    // Process each line from Python
     rl.on('line', (line) => {
-      // Check for PROGRESS lines
+      line = line.trim();
+      if (!line) return;
+
+      // Handle PROGRESS lines
       if (line.startsWith('PROGRESS:')) {
-        const percent = parseInt(line.split(':')[1], 10);
-        if (!isNaN(percent) && onProgress) {
-          onProgress(percent);
+        const pct = parseInt(line.split(':')[1], 10) || 0;
+        if (onProgress && !isNaN(pct)) {
+          onProgress(pct);
         }
-      }
-      // Check for JSON in line
-      else if (line.trim().startsWith('{')) {
-        lastJsonLine = line;
-        jsonBuffer = line;
-      }
-    });
-
-    rl.on('close', () => {
-      // Cleanup
-    });
-
-    python.stderr.on('data', (data) => {
-      stderr += data.toString();
-    });
-
-    // Timeout after 15 minutes
-    const timeout = setTimeout(() => {
-      python.kill('SIGTERM');
-      reject(new Error('Python processing timeout after 15 minutes'));
-    }, 15 * 60 * 1000);
-
-    python.on('close', (code) => {
-      clearTimeout(timeout);
-
-      if (code !== 0) {
-        reject(new Error(`Python exited with code ${code}: ${stderr}`));
         return;
       }
 
-      // Parse JSON from buffer
-      if (jsonBuffer) {
+      // Handle JSON lines
+      if (line.startsWith('{')) {
         try {
-          const result = JSON.parse(jsonBuffer);
-          resolve(result);
+          lastJson = JSON.parse(line);
+          console.log('[Python] Received JSON:', lastJson);
         } catch (e) {
-          reject(new Error(`Failed to parse JSON from Python: ${e.message}`));
+          console.warn('[Python] Invalid JSON:', e.message);
         }
-      } else if (lastJsonLine) {
-        try {
-          const result = JSON.parse(lastJsonLine);
-          resolve(result);
-        } catch (e) {
-          reject(new Error(`Failed to parse last JSON line: ${e.message}`));
-        }
-      } else {
-        reject(new Error('No JSON output from Python script'));
       }
     });
 
-    python.on('error', (err) => {
-      clearTimeout(timeout);
-      reject(new Error(`Failed to spawn Python process: ${err.message}`));
+    proc.stderr.on('data', (data) => {
+      const msg = data.toString();
+      stderr += msg;
+      // Log Python stderr (model loading, etc.) but don't fail on it
+      console.error('[Python stderr]', msg.trim());
+    });
+
+    // Timeout: 15 minutes
+    const timer = setTimeout(() => {
+      timedOut = true;
+      proc.kill('SIGTERM');
+    }, 15 * 60 * 1000);
+
+    proc.on('close', (code) => {
+      clearTimeout(timer);
+
+      // If already handled by timeout, don't process again
+      if (timedOut) {
+        return reject(new Error('Processing timeout (15 minutes)'));
+      }
+
+      // Check exit code
+      if (code !== 0) {
+        const msg = stderr.slice(-500) || `Python exited with code ${code}`;
+        return reject(new Error(msg));
+      }
+
+      // Check for JSON result
+      if (!lastJson) {
+        return reject(new Error('Python completed but no JSON output'));
+      }
+
+      // Check for error in JSON
+      if (lastJson.error) {
+        return reject(new Error(lastJson.error));
+      }
+
+      // Success
+      resolve(lastJson);
+    });
+
+    proc.on('error', (err) => {
+      clearTimeout(timer);
+      reject(new Error(
+        `Failed to start Python: ${err.message}. ` +
+        `Check PYTHON_EXEC=${pythonPath} in .env`
+      ));
     });
   });
 }
+
+export default { spawnPythonProcess };

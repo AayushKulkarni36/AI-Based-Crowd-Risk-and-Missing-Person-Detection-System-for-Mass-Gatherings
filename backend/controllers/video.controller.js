@@ -1,141 +1,163 @@
 import path from 'path';
 import { fileURLToPath } from 'url';
-import pool from '../config/db.js';
-import { videoQueue } from '../queues/video.queue.js';
 import logger from '../utils/logger.js';
+import { spawnPythonProcess } from '../utils/python.executor.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
+// ============================================================================
+// IN-MEMORY JOB STORE (no database)
+// ============================================================================
+const jobs = new Map();
+
+/**
+ * POST /api/video/upload
+ * Save uploaded video, return job ID
+ * NO database calls
+ */
 export async function uploadVideo(req, res, next) {
   try {
     if (!req.file) {
       return res.status(400).json({ success: false, error: 'No video file provided' });
     }
 
-    const userId = req.user?.id ?? null;
+    const jobId = Date.now().toString();
 
-    const result = await pool.query(
-      `INSERT INTO video_jobs (filename, file_path, status, uploaded_by, uploaded_at)
-       VALUES ($1, $2, 'UPLOADED', $3, NOW())
-       RETURNING id, filename`,
-      [req.file.filename, req.file.path, userId]
-    );
+    jobs.set(jobId, {
+      id: jobId,
+      filename: req.file.originalname,
+      filePath: req.file.path,
+      status: 'UPLOADED',
+      results: null,
+      error: null,
+      uploadedAt: new Date()
+    });
 
-    const videoJobId = result.rows[0].id;
-
-    logger.info(`Video uploaded: ${req.file.filename} → job ${videoJobId}`);
+    logger.info(`Video uploaded: ${req.file.originalname} → job ${jobId}`);
 
     return res.json({
       success: true,
-      videoJobId,
-      filename: req.file.filename,
+      videoId: jobId,
+      filename: req.file.originalname,
       message: 'Video uploaded successfully'
     });
   } catch (error) {
-    logger.error('Video upload failed:', error.message);
+    logger.error('Upload failed:', error.message);
     return next(error);
   }
 }
 
+/**
+ * POST /api/video/process/:videoId
+ * Start processing video, return immediately
+ * Processing happens in background
+ * NO database calls
+ */
 export async function processVideo(req, res, next) {
   try {
     const { videoId } = req.params;
+    const job = jobs.get(videoId);
 
-    const videoResult = await pool.query(
-      'SELECT id, filename, file_path, status FROM video_jobs WHERE id = $1',
-      [videoId]
-    );
-
-    if (videoResult.rows.length === 0) {
+    if (!job) {
       return res.status(404).json({ success: false, error: 'Video not found' });
     }
 
-    const videoJob = videoResult.rows[0];
-
-    if (videoJob.status === 'PROCESSING' || videoJob.status === 'COMPLETED') {
+    if (job.status === 'processing' || job.status === 'completed') {
       return res.status(202).json({
         success: true,
-        message: 'Video is already processing or completed',
+        message: `Already ${job.status}`,
         videoId,
-        status: videoJob.status
+        status: job.status
       });
     }
 
-    // Enqueue in BullMQ
-    const job = await videoQueue.add(
-      'process-video',
-      {
-        videoPath: videoJob.file_path,
-        videoJobId: videoJob.id,
-        uploadedBy: req.user?.id,
-        faceMatch: req.body?.faceMatch || false
-      },
-      {
-        jobId: `video-${videoJob.id}`,
-        priority: 1
-      }
-    );
+    // Mark as processing
+    job.status = 'PROCESSING';
+    job.startedAt = new Date();
 
-    await pool.query(
-      "UPDATE video_jobs SET status = 'QUEUED' WHERE id = $1",
-      [videoJob.id]
-    );
-
-    logger.info(`Video job ${videoJob.id} queued as BullMQ job ${job.id}`);
-
-    return res.status(202).json({
+    // Return immediately
+    res.status(202).json({
       success: true,
-      message: 'Video processing started',
+      message: 'Processing started',
       videoId,
-      jobId: job.id,
-      status: 'QUEUED'
+      status: 'PROCESSING'
     });
+
+    // Run Python in background (do not await)
+    _runPython(videoId, job.filePath).catch((err) => {
+      const j = jobs.get(videoId);
+      if (j) {
+        j.status = 'failed';
+        j.error = err.message;
+      }
+      logger.error(`Job ${videoId} failed:`, err.message);
+    });
+
   } catch (error) {
     logger.error('processVideo failed:', error.message);
     return next(error);
   }
 }
 
+/**
+ * Internal: Run Python detection in background
+ */
+async function _runPython(videoId, filePath) {
+  const job = jobs.get(videoId);
+  if (!job) return;
+
+  try {
+    logger.info(`Starting Python processing for job ${videoId}`);
+
+    const results = await spawnPythonProcess(filePath, (progress) => {
+      if (job) {
+        job.progress = progress;
+      }
+    });
+
+    job.results = results;
+    job.status = 'COMPLETED';
+    job.completedAt = new Date();
+
+    logger.info(`Job ${videoId} completed: ${results.totalPeople} people, risk ${results.riskLevel}`);
+  } catch (err) {
+    job.status = 'FAILED';
+    job.error = err.message;
+    logger.error(`Job ${videoId} failed:`, err.message);
+    throw err;
+  }
+}
+
+/**
+ * GET /api/video/results/:videoId
+ * Get job status and results
+ * NO database calls
+ */
 export async function getResults(req, res, next) {
   try {
     const { videoId } = req.params;
+    const job = jobs.get(videoId);
 
-    const result = await pool.query(
-      `SELECT
-         id, filename, status, progress, total_people, avg_density,
-         risk_level, face_matches_count, results_json, error_message,
-         output_video_path,
-         uploaded_at, processing_started_at, processing_completed_at
-       FROM video_jobs
-       WHERE id = $1`,
-      [videoId]
-    );
-
-    if (result.rows.length === 0) {
+    if (!job) {
       return res.status(404).json({ success: false, error: 'Video job not found' });
     }
 
-    const job = result.rows[0];
-
-    // results_json is stored as jsonb, comes back as object already
-    const parsedResults = job.results_json || {};
+    if (job.status === 'failed') {
+      return res.status(500).json({
+        success: false,
+        status: job.status,
+        error: job.error
+      });
+    }
 
     return res.json({
       success: true,
       status: job.status,
       progress: job.progress || 0,
-      results: {
-        totalPeople: job.total_people,
-        avgPeoplePerFrame: job.avg_density,
-        riskLevel: job.risk_level,
-        faceMatches: job.face_matches_count || 0,
-        outputVideoPath: job.output_video_path,
-        ...parsedResults
-      },
-      uploadedAt: job.uploaded_at,
-      processingStartedAt: job.processing_started_at,
-      processingCompletedAt: job.processing_completed_at,
-      error: job.error_message
+      results: job.results,
+      uploadedAt: job.uploadedAt,
+      startedAt: job.startedAt,
+      completedAt: job.completedAt
     });
   } catch (error) {
     logger.error('getResults failed:', error.message);
@@ -143,22 +165,27 @@ export async function getResults(req, res, next) {
   }
 }
 
+/**
+ * GET /api/video/list
+ * List all jobs (for debugging)
+ */
 export async function listVideos(req, res, next) {
   try {
-    const limit = Math.min(parseInt(req.query.limit) || 10, 100);
-    const offset = parseInt(req.query.offset) || 0;
+    const jobsArray = Array.from(jobs.values()).map(job => ({
+      id: job.id,
+      filename: job.filename,
+      status: job.status,
+      uploadedAt: job.uploadedAt,
+      startedAt: job.startedAt,
+      completedAt: job.completedAt,
+      hasResults: !!job.results
+    }));
 
-    const result = await pool.query(
-      `SELECT
-         id, filename, status, total_people, risk_level, uploaded_at,
-         processing_completed_at, face_matches_count, progress
-       FROM video_jobs
-       ORDER BY uploaded_at DESC
-       LIMIT $1 OFFSET $2`,
-      [limit, offset]
-    );
-
-    return res.json({ success: true, videos: result.rows, limit, offset });
+    return res.json({
+      success: true,
+      jobs: jobsArray,
+      total: jobsArray.length
+    });
   } catch (error) {
     logger.error('listVideos failed:', error.message);
     return next(error);
