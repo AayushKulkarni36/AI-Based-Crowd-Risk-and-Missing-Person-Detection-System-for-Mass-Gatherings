@@ -4,7 +4,7 @@
 
 -- Admin user (password: admin@123)
 -- bcrypt hash for 'admin@123' with 10 rounds
-INSERT INTO users (email, password_hash, name, role, is_active)
+INSERT INTO users (email, password_hash, full_name, role, is_active)
 VALUES (
     'admin@crowdsafe.com',
     '$2b$10$YRqHIkLDerK19KSgz6zQGOmESnXrNx4VZSokhrmVgBSGE9bNIIkGy',

@@ -1,6 +1,9 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Loader2, AlertTriangle, Download, MonitorPlay, Activity, CheckCircle2 } from 'lucide-react';
+import {
+  Loader2, AlertTriangle, Download, MonitorPlay, Activity,
+  CheckCircle2, Brain, User, Eye, TrendingUp,
+} from 'lucide-react';
 import { Upload, X } from 'lucide-react';
 import SafetyPanel from '../components/SafetyPanel';
 import { api, VideoJobStatus } from '../services/api';
@@ -11,11 +14,22 @@ import clsx from 'clsx';
 
 type UIStatus = 'idle' | 'uploading' | 'processing' | 'completed' | 'failed';
 
+interface FaceMatch {
+  personId: number;
+  name: string;
+  confidence: number;
+  similarity: number;
+  frameNumber: number;
+  imagePath?: string;
+  timestamp?: string;
+}
+
 interface VideoState {
-  videoJobId: number | null;
+  videoJobId: string | number | null;
   uiStatus: UIStatus;
   progress: number;
   results: VideoJobStatus['results'] | null;
+  faceMatches: FaceMatch[];
   errorMsg: string | null;
   filename: string | null;
 }
@@ -25,10 +39,52 @@ const INITIAL_STATE: VideoState = {
   uiStatus: 'idle',
   progress: 0,
   results: null,
+  faceMatches: [],
   errorMsg: null,
   filename: null,
 };
 
+// ── Helpers ──────────────────────────────────────────────────────────────────
+
+function riskColor(risk: string) {
+  return risk === 'CRITICAL' ? 'text-red-400'
+    : risk === 'RISKY' ? 'text-orange-400'
+    : risk === 'MODERATE' ? 'text-amber-400'
+    : 'text-emerald-400';
+}
+
+function confidenceBadge(conf: number) {
+  const pct = Math.round(conf * 100);
+  const cls = pct >= 85 ? 'bg-red-500/20 text-red-300 border-red-500/30'
+    : pct >= 70 ? 'bg-amber-500/20 text-amber-300 border-amber-500/30'
+    : 'bg-blue-500/20 text-blue-300 border-blue-500/30';
+  return { pct, cls };
+}
+
+// ── Face Match Card ──────────────────────────────────────────────────────────
+function FaceMatchCard({ match }: { match: FaceMatch }) {
+  const { pct, cls } = confidenceBadge(match.confidence);
+  return (
+    <motion.div
+      initial={{ opacity: 0, x: 20 }}
+      animate={{ opacity: 1, x: 0 }}
+      className="flex items-center gap-3 p-3 bg-amber-500/5 border border-amber-500/20 rounded-lg"
+    >
+      <div className="w-9 h-9 rounded-full bg-amber-500/20 flex items-center justify-center flex-shrink-0">
+        <User className="w-4 h-4 text-amber-400" />
+      </div>
+      <div className="flex-1 min-w-0">
+        <p className="text-white font-semibold text-sm truncate">{match.name}</p>
+        <p className="text-xs text-slate-400">Frame #{match.frameNumber}</p>
+      </div>
+      <span className={clsx('px-2 py-0.5 rounded-full text-xs font-bold border', cls)}>
+        {pct}%
+      </span>
+    </motion.div>
+  );
+}
+
+// ── Main Component ───────────────────────────────────────────────────────────
 export default function CrowdDetection() {
   const { t } = useTranslation();
   const { on, off } = useSocket();
@@ -45,58 +101,70 @@ export default function CrowdDetection() {
     }
   }, []);
 
-  const startPolling = useCallback((jobId: number) => {
+  const startPolling = useCallback((jobId: string | number) => {
     stopPolling();
     pollTimer.current = window.setInterval(async () => {
       try {
         const data = await api.getVideoResults(jobId);
+
+        // Extract face matches from results if present
+        const faceMatches: FaceMatch[] = Array.isArray(data.results?.faceMatches)
+          ? (data.results!.faceMatches as any[])
+          : [];
+
         setState(prev => ({
           ...prev,
           progress: data.progress ?? prev.progress,
-          uiStatus: data.status === 'COMPLETED' ? 'completed'
+          uiStatus:
+            data.status === 'COMPLETED' ? 'completed'
             : data.status === 'FAILED' ? 'failed'
             : 'processing',
           results: data.results ?? prev.results,
+          faceMatches: faceMatches.length > 0 ? faceMatches : prev.faceMatches,
           errorMsg: data.error ?? prev.errorMsg,
         }));
-        if (data.status === 'COMPLETED' || data.status === 'FAILED') {
+
+        if (data.status === 'COMPLETED') {
           stopPolling();
+          if (faceMatches.length > 0) {
+            toast.warning(`⚠️ ${faceMatches.length} missing person(s) possibly detected!`);
+          } else {
+            toast.success('Analysis complete — no missing persons detected');
+          }
         }
-      } catch (err: any) {
-        // Keep polling; transient network error
-      }
+        if (data.status === 'FAILED') stopPolling();
+      } catch (_) {}
     }, 3000);
   }, [stopPolling]);
 
-  // ── Socket listeners (real-time updates) ────────────────────────────────
+  // Socket listeners
   useEffect(() => {
+    const jobKey = () => state.videoJobId ? `video-${state.videoJobId}` : null;
+
     const handleProgress = (data: { jobId: string; progress: number }) => {
-      const numericJobId = state.videoJobId ? `video-${state.videoJobId}` : null;
-      if (!numericJobId || data.jobId !== numericJobId) return;
+      if (!jobKey() || data.jobId !== jobKey()) return;
       setState(prev => ({ ...prev, progress: data.progress }));
     };
 
     const handleCompleted = (data: { jobId: string; results: VideoJobStatus['results'] }) => {
-      const numericJobId = state.videoJobId ? `video-${state.videoJobId}` : null;
-      if (!numericJobId || data.jobId !== numericJobId) return;
+      if (!jobKey() || data.jobId !== jobKey()) return;
+      const faceMatches: FaceMatch[] = Array.isArray((data.results as any)?.faceMatches)
+        ? (data.results as any).faceMatches
+        : [];
       setState(prev => ({
         ...prev,
         uiStatus: 'completed',
         progress: 100,
         results: data.results,
+        faceMatches,
       }));
       stopPolling();
       toast.success('Analysis complete!');
     };
 
     const handleFailed = (data: { jobId: string; error: string }) => {
-      const numericJobId = state.videoJobId ? `video-${state.videoJobId}` : null;
-      if (!numericJobId || data.jobId !== numericJobId) return;
-      setState(prev => ({
-        ...prev,
-        uiStatus: 'failed',
-        errorMsg: data.error,
-      }));
+      if (!jobKey() || data.jobId !== jobKey()) return;
+      setState(prev => ({ ...prev, uiStatus: 'failed', errorMsg: data.error }));
       stopPolling();
       toast.error(`Analysis failed: ${data.error}`);
     };
@@ -112,10 +180,9 @@ export default function CrowdDetection() {
     };
   }, [on, off, state.videoJobId, stopPolling]);
 
-  // Cleanup timers on unmount
   useEffect(() => () => stopPolling(), [stopPolling]);
 
-  // ── File handlers ─────────────────────────────────────────────────────────
+  // File handlers
   const handleDrag = (e: React.DragEvent) => {
     e.preventDefault(); e.stopPropagation();
     setDragActive(e.type === 'dragenter' || e.type === 'dragover');
@@ -135,21 +202,18 @@ export default function CrowdDetection() {
     setState(INITIAL_STATE);
   };
 
-  // ── Upload + process ──────────────────────────────────────────────────────
+  // Upload + process
   const handleStartAnalysis = async () => {
     if (!file) return;
     setState({ ...INITIAL_STATE, uiStatus: 'uploading', filename: file.name });
 
     try {
-      // Step 1: Upload
       const { videoJobId } = await api.uploadVideo(file);
       setState(prev => ({ ...prev, videoJobId, uiStatus: 'processing', progress: 5 }));
 
-      // Step 2: Enqueue
       await api.processVideo(videoJobId);
       toast.info('Analysis started — tracking progress...');
 
-      // Step 3: Poll as fallback (socket handles primary)
       startPolling(videoJobId);
     } catch (err: any) {
       setState(prev => ({
@@ -169,7 +233,12 @@ export default function CrowdDetection() {
   const isBusy = isUploading || isProcessing;
 
   const riskLevel = state.results?.riskLevel ?? 'SAFE';
-  const safetyRisk = riskLevel === 'CRITICAL' ? 'high' : riskLevel === 'RISKY' ? 'high' : riskLevel === 'MODERATE' ? 'medium' : 'low';
+  const safetyRisk = riskLevel === 'CRITICAL' || riskLevel === 'RISKY' ? 'high'
+    : riskLevel === 'MODERATE' ? 'medium' : 'low';
+
+  const outputVideoUrl = state.results?.outputVideoPath
+    ? `http://localhost:5000/${state.results.outputVideoPath}`
+    : null;
 
   return (
     <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
@@ -179,8 +248,10 @@ export default function CrowdDetection() {
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-        {/* Upload Column */}
+
+        {/* ── Left column ─────────────────────────────────────────────────── */}
         <div className="lg:col-span-1 space-y-6">
+
           {/* Upload Card */}
           <div className="card">
             <h3 className="text-xl font-bold text-white mb-4">{t('upload.title')}</h3>
@@ -266,15 +337,15 @@ export default function CrowdDetection() {
 
                 <div className="flex items-center space-x-3 bg-slate-900/50 p-3 rounded-lg">
                   <div className={clsx('w-3 h-3 rounded-full',
-                    isProcessing ? 'bg-amber-500 animate-pulse' :
-                    isCompleted ? 'bg-emerald-500' :
-                    isFailed ? 'bg-red-500' : 'bg-slate-500'
+                    isProcessing ? 'bg-amber-500 animate-pulse'
+                    : isCompleted ? 'bg-emerald-500'
+                    : isFailed ? 'bg-red-500' : 'bg-slate-500'
                   )} />
                   <span className="text-slate-300 font-medium capitalize">
-                    {isUploading ? 'Uploading video...' :
-                     isProcessing ? `Analyzing crowd patterns... ${state.progress}%` :
-                     isCompleted ? 'Analysis complete' :
-                     isFailed ? 'Analysis failed' : state.uiStatus}
+                    {isUploading ? 'Uploading video...'
+                    : isProcessing ? `Analyzing crowd patterns... ${state.progress}%`
+                    : isCompleted ? 'Analysis complete'
+                    : isFailed ? 'Analysis failed' : state.uiStatus}
                   </span>
                 </div>
 
@@ -296,12 +367,17 @@ export default function CrowdDetection() {
                       </div>
                       <div className="bg-slate-900/50 p-3 rounded-lg">
                         <p className="text-slate-400">Risk Level</p>
-                        <p className={clsx('font-bold text-xl',
-                          riskLevel === 'CRITICAL' ? 'text-red-400' :
-                          riskLevel === 'RISKY' ? 'text-orange-400' :
-                          riskLevel === 'MODERATE' ? 'text-amber-400' : 'text-emerald-400'
-                        )}>{riskLevel}</p>
+                        <p className={clsx('font-bold text-xl', riskColor(riskLevel))}>{riskLevel}</p>
                       </div>
+                      {/* Face matches count */}
+                      {state.faceMatches.length > 0 && (
+                        <div className="col-span-2 bg-amber-500/10 border border-amber-500/20 p-3 rounded-lg">
+                          <p className="text-amber-400 text-xs font-bold flex items-center gap-1">
+                            <Brain className="w-3 h-3" />
+                            {state.faceMatches.length} Missing Person Match{state.faceMatches.length > 1 ? 'es' : ''}
+                          </p>
+                        </div>
+                      )}
                     </div>
                     <SafetyPanel riskLevel={safetyRisk} />
                   </>
@@ -317,16 +393,54 @@ export default function CrowdDetection() {
               <span className="text-sm">{state.errorMsg}</span>
             </div>
           )}
+
+          {/* Face Matches Panel */}
+          <AnimatePresence>
+            {isCompleted && state.faceMatches.length > 0 && (
+              <motion.div
+                initial={{ opacity: 0, y: 10 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0 }}
+                className="card space-y-3 border-l-4 border-l-amber-500"
+              >
+                <div className="flex items-center gap-2">
+                  <Brain className="w-5 h-5 text-amber-400" />
+                  <h3 className="text-lg font-semibold text-white">Missing Person Matches</h3>
+                </div>
+                <p className="text-xs text-slate-400">
+                  Cosine similarity matches found via FaceNet embeddings
+                </p>
+                <div className="space-y-2">
+                  {state.faceMatches.map((m, i) => (
+                    <FaceMatchCard key={`${m.personId}-${i}`} match={m} />
+                  ))}
+                </div>
+              </motion.div>
+            )}
+          </AnimatePresence>
+
+          {/* No matches note */}
+          {isCompleted && state.faceMatches.length === 0 && (
+            <div className="p-3 bg-emerald-500/5 border border-emerald-500/20 rounded-lg text-emerald-400 text-xs flex items-center gap-2">
+              <CheckCircle2 className="w-4 h-4 flex-shrink-0" />
+              No missing persons detected in this footage
+            </div>
+          )}
         </div>
 
-        {/* Results Column */}
+        {/* ── Right column ─────────────────────────────────────────────────── */}
         <div className="lg:col-span-2 space-y-6">
           <div className="card min-h-[500px] flex flex-col items-center justify-center p-0 overflow-hidden relative bg-black shadow-2xl shadow-black/50 border-slate-800">
-            {isCompleted && state.results?.outputVideoPath ? (
+
+            {/* Annotated video */}
+            {isCompleted && outputVideoUrl ? (
               <video
-                src={`http://localhost:5000/${state.results.outputVideoPath}`}
+                key={outputVideoUrl}
+                src={outputVideoUrl}
                 controls
+                autoPlay={false}
                 className="w-full h-full object-contain"
+                onError={() => toast.error('Video failed to load. Try downloading instead.')}
               />
             ) : (
               <div className="flex flex-col items-center text-slate-500 space-y-4 p-8">
@@ -337,13 +451,22 @@ export default function CrowdDetection() {
                       <Loader2 className="w-16 h-16 animate-spin text-brand-primary relative z-10" />
                     </div>
                     <p className="text-brand-primary font-medium animate-pulse">
-                      {isUploading ? 'Uploading video...' : 'Analyzing crowd patterns...'}
+                      {isUploading ? 'Uploading video...' : 'Analyzing crowd patterns & running face matching...'}
                     </p>
+                    {isProcessing && state.progress > 0 && (
+                      <div className="w-64 bg-slate-800 rounded-full h-1.5">
+                        <div
+                          className="bg-brand-primary h-1.5 rounded-full transition-all"
+                          style={{ width: `${state.progress}%` }}
+                        />
+                      </div>
+                    )}
                   </>
                 ) : (
                   <>
                     <MonitorPlay className="w-16 h-16 opacity-20" />
                     <p>Processed output will appear here</p>
+                    <p className="text-xs text-slate-600">Upload a video and click Start Analysis</p>
                   </>
                 )}
               </div>
@@ -352,20 +475,47 @@ export default function CrowdDetection() {
             {isCompleted && (
               <div className="absolute top-4 left-4 bg-black/60 backdrop-blur-md px-3 py-1 rounded-full border border-white/10 flex items-center gap-2">
                 <Activity className="w-4 h-4 text-brand-secondary" />
-                <span className="text-xs font-medium text-white">Heatmap Active</span>
+                <span className="text-xs font-medium text-white">Live Annotation</span>
               </div>
             )}
           </div>
 
-          {isCompleted && state.results?.outputVideoPath && (
-            <div className="flex justify-end">
-              <a
-                href={`http://localhost:5000/${state.results.outputVideoPath}`}
-                download
-                className="btn-primary"
-              >
-                <Download className="w-4 h-4" /> Download Analyzed Footage
-              </a>
+          {/* Download + stats row */}
+          {isCompleted && (
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              {/* Stats chips */}
+              <div className="flex flex-wrap gap-2">
+                {state.results?.totalPeople != null && (
+                  <div className="flex items-center gap-1.5 px-3 py-1.5 bg-slate-800 rounded-full text-xs text-slate-300 border border-slate-700">
+                    <Eye className="w-3.5 h-3.5" />
+                    {state.results.totalPeople} people detected
+                  </div>
+                )}
+                {state.results?.avgPeoplePerFrame != null && (
+                  <div className="flex items-center gap-1.5 px-3 py-1.5 bg-slate-800 rounded-full text-xs text-slate-300 border border-slate-700">
+                    <TrendingUp className="w-3.5 h-3.5" />
+                    {state.results.avgPeoplePerFrame} avg/frame
+                  </div>
+                )}
+                {state.faceMatches.length > 0 && (
+                  <div className="flex items-center gap-1.5 px-3 py-1.5 bg-amber-500/10 rounded-full text-xs text-amber-300 border border-amber-500/30">
+                    <Brain className="w-3.5 h-3.5" />
+                    {state.faceMatches.length} face match{state.faceMatches.length > 1 ? 'es' : ''}
+                  </div>
+                )}
+              </div>
+
+              {/* Download button */}
+              {outputVideoUrl && (
+                <a
+                  href={outputVideoUrl}
+                  download
+                  className="btn-primary"
+                >
+                  <Download className="w-4 h-4" />
+                  Download Annotated Video
+                </a>
+              )}
             </div>
           )}
         </div>

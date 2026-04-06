@@ -5,8 +5,9 @@ import pg from 'pg';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
-dotenv.config({ path: path.resolve(__dirname, '../.env') });
-dotenv.config({ path: path.resolve(__dirname, '../../.env') });
+// Force-load env values from .env so a stale process env doesn't break DB access.
+dotenv.config({ path: path.resolve(__dirname, '../.env'), override: true });
+dotenv.config({ path: path.resolve(__dirname, '../../.env'), override: true });
 
 const { Pool } = pg;
 

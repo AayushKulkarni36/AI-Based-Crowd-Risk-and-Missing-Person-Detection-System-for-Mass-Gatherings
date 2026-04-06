@@ -1,45 +1,77 @@
 import path from 'path';
+import fs from 'fs';
 import { fileURLToPath } from 'url';
 import logger from '../utils/logger.js';
 import { spawnPythonProcess } from '../utils/python.executor.js';
+import pool from '../config/db.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 // ============================================================================
-// IN-MEMORY JOB STORE (no database)
+// IN-MEMORY CACHE  (for fast polling — DB is source of truth)
 // ============================================================================
-const jobs = new Map();
+const jobCache = new Map(); // videoId (string) → { status, progress, results, error }
 
-/**
- * POST /api/video/upload
- * Save uploaded video, return job ID
- * NO database calls
- */
+// ============================================================================
+// HELPERS
+// ============================================================================
+
+function cacheSet(videoId, patch) {
+  const existing = jobCache.get(String(videoId)) || {};
+  jobCache.set(String(videoId), { ...existing, ...patch });
+}
+
+function cacheGet(videoId) {
+  return jobCache.get(String(videoId)) || null;
+}
+
+// ============================================================================
+// POST /api/video/upload
+// ============================================================================
 export async function uploadVideo(req, res, next) {
   try {
     if (!req.file) {
       return res.status(400).json({ success: false, error: 'No video file provided' });
     }
 
-    const jobId = Date.now().toString();
+    const filePath = req.file.path.replace(/\\/g, '/');
+    const filename = req.file.originalname;
 
-    jobs.set(jobId, {
-      id: jobId,
-      filename: req.file.originalname,
-      filePath: req.file.path,
+    // Insert into DB — this makes the job visible to facematch controller
+    let videoId;
+    try {
+      const dbResult = await pool.query(
+        `INSERT INTO video_jobs (filename, file_path, status, progress)
+         VALUES ($1, $2, 'UPLOADED', 0)
+         RETURNING id`,
+        [filename, filePath]
+      );
+      videoId = dbResult.rows[0].id;
+    } catch (dbErr) {
+      // DB unavailable — fall back to timestamp ID
+      logger.warn(`DB insert failed for upload, using timestamp ID: ${dbErr.message}`);
+      videoId = Date.now().toString();
+    }
+
+    cacheSet(videoId, {
+      id: videoId,
+      filename,
+      filePath,
       status: 'UPLOADED',
+      progress: 0,
       results: null,
       error: null,
-      uploadedAt: new Date()
+      uploadedAt: new Date(),
     });
 
-    logger.info(`Video uploaded: ${req.file.originalname} → job ${jobId}`);
+    logger.info(`Video uploaded: ${filename} → job ${videoId}`);
 
     return res.json({
       success: true,
-      videoId: jobId,
-      filename: req.file.originalname,
-      message: 'Video uploaded successfully'
+      videoId,          // used by routes (:videoId)
+      videoJobId: videoId, // kept for frontend compatibility
+      filename,
+      message: 'Video uploaded successfully',
     });
   } catch (error) {
     logger.error('Upload failed:', error.message);
@@ -47,49 +79,75 @@ export async function uploadVideo(req, res, next) {
   }
 }
 
-/**
- * POST /api/video/process/:videoId
- * Start processing video, return immediately
- * Processing happens in background
- * NO database calls
- */
+// ============================================================================
+// POST /api/video/process/:videoId
+// ============================================================================
 export async function processVideo(req, res, next) {
   try {
     const { videoId } = req.params;
-    const job = jobs.get(videoId);
+
+    // Check cache first, then DB
+    let job = cacheGet(videoId);
+    if (!job) {
+      try {
+        const dbRow = await pool.query(
+          'SELECT id, filename, file_path, status FROM video_jobs WHERE id = $1',
+          [videoId]
+        );
+        if (dbRow.rows.length > 0) {
+          const r = dbRow.rows[0];
+          job = {
+            id: r.id,
+            filename: r.filename,
+            filePath: r.file_path,
+            status: r.status,
+            progress: 0,
+            results: null,
+            error: null,
+          };
+          cacheSet(videoId, job);
+        }
+      } catch (dbErr) {
+        logger.warn(`DB lookup failed for job ${videoId}: ${dbErr.message}`);
+      }
+    }
 
     if (!job) {
       return res.status(404).json({ success: false, error: 'Video not found' });
     }
 
-    if (job.status === 'processing' || job.status === 'completed') {
+    if (job.status === 'PROCESSING' || job.status === 'COMPLETED') {
       return res.status(202).json({
         success: true,
         message: `Already ${job.status}`,
         videoId,
-        status: job.status
+        status: job.status,
       });
     }
 
     // Mark as processing
-    job.status = 'PROCESSING';
-    job.startedAt = new Date();
+    cacheSet(videoId, { status: 'PROCESSING', startedAt: new Date() });
 
-    // Return immediately
+    try {
+      await pool.query(
+        `UPDATE video_jobs SET status = 'PROCESSING', processing_started_at = NOW() WHERE id = $1`,
+        [videoId]
+      );
+    } catch (dbErr) {
+      logger.warn(`DB status update failed for job ${videoId}: ${dbErr.message}`);
+    }
+
+    // Return immediately — processing happens in background
     res.status(202).json({
       success: true,
       message: 'Processing started',
       videoId,
-      status: 'PROCESSING'
+      status: 'PROCESSING',
     });
 
-    // Run Python in background (do not await)
+    // Run Python in background
     _runPython(videoId, job.filePath).catch((err) => {
-      const j = jobs.get(videoId);
-      if (j) {
-        j.status = 'failed';
-        j.error = err.message;
-      }
+      cacheSet(videoId, { status: 'FAILED', error: err.message });
       logger.error(`Job ${videoId} failed:`, err.message);
     });
 
@@ -99,54 +157,158 @@ export async function processVideo(req, res, next) {
   }
 }
 
-/**
- * Internal: Run Python detection in background
- */
+// ============================================================================
+// INTERNAL — run Python detection
+// ============================================================================
 async function _runPython(videoId, filePath) {
-  const job = jobs.get(videoId);
-  if (!job) return;
+  const cached = cacheGet(videoId);
+  if (!cached) return;
 
   try {
-    logger.info(`Starting Python processing for job ${videoId}`);
+    logger.info(`Starting Python processing for job ${videoId}: ${filePath}`);
 
     const results = await spawnPythonProcess(filePath, (progress) => {
-      if (job) {
-        job.progress = progress;
-      }
+      cacheSet(videoId, { progress });
     });
 
-    job.results = results;
-    job.status = 'COMPLETED';
-    job.completedAt = new Date();
+    // Classify risk
+    const totalPeople = results.totalPeople || 0;
+    const outputVideoPath = results.outputVideoPath || null;
+    const riskLevel = results.riskLevel || _classifyRisk(totalPeople);
 
-    logger.info(`Job ${videoId} completed: ${results.totalPeople} people, risk ${results.riskLevel}`);
+    cacheSet(videoId, {
+      status: 'COMPLETED',
+      progress: 100,
+      results,
+      completedAt: new Date(),
+    });
+
+    // Persist to DB
+    try {
+      await pool.query(
+        `UPDATE video_jobs
+         SET status = 'COMPLETED',
+             total_people = $1,
+             avg_density  = $2,
+             risk_level   = $3,
+             face_matches_count = $4,
+             results_json = $5,
+             progress     = 100,
+             processing_completed_at = NOW()
+         WHERE id = $6`,
+        [
+          totalPeople,
+          results.avgPeoplePerFrame || 0,
+          riskLevel,
+          Array.isArray(results.faceMatches) ? results.faceMatches.length : 0,
+          JSON.stringify(results),
+          videoId,
+        ]
+      );
+
+      // Insert alert log
+      await pool.query(
+        `INSERT INTO alert_logs (timestamp, alert_type, risk_level, person_count, message)
+         VALUES (NOW(), $1, $2, $3, $4)`,
+        [
+          'CROWD_DETECTION',
+          riskLevel,
+          totalPeople,
+          `Crowd detection completed: ${totalPeople} people (${riskLevel})`,
+        ]
+      );
+    } catch (dbErr) {
+      logger.warn(`DB update failed after processing job ${videoId}: ${dbErr.message}`);
+    }
+
+    logger.info(`Job ${videoId} completed: ${totalPeople} people, risk ${riskLevel}`);
+
   } catch (err) {
-    job.status = 'FAILED';
-    job.error = err.message;
+    cacheSet(videoId, { status: 'FAILED', error: err.message });
+
+    try {
+      await pool.query(
+        `UPDATE video_jobs SET status = 'FAILED', error_message = $1 WHERE id = $2`,
+        [err.message.slice(0, 1000), videoId]
+      );
+    } catch (_) {}
+
     logger.error(`Job ${videoId} failed:`, err.message);
     throw err;
   }
 }
 
-/**
- * GET /api/video/results/:videoId
- * Get job status and results
- * NO database calls
- */
+function _classifyRisk(maxPeople) {
+  if (maxPeople < 10) return 'SAFE';
+  if (maxPeople < 25) return 'MODERATE';
+  if (maxPeople < 50) return 'RISKY';
+  return 'CRITICAL';
+}
+
+// ============================================================================
+// GET /api/video/results/:videoId
+// ============================================================================
 export async function getResults(req, res, next) {
   try {
     const { videoId } = req.params;
-    const job = jobs.get(videoId);
+
+    // Try cache first
+    let job = cacheGet(videoId);
+
+    // Fall back to DB
+    if (!job || job.status === 'PROCESSING') {
+      try {
+        const dbRow = await pool.query(
+          `SELECT id, status, progress, total_people, avg_density, risk_level,
+                  face_matches_count, results_json, error_message,
+                  uploaded_at, processing_started_at, processing_completed_at
+           FROM video_jobs WHERE id = $1`,
+          [videoId]
+        );
+        if (dbRow.rows.length > 0) {
+          const r = dbRow.rows[0];
+          const parsedResults = r.results_json ? JSON.parse(r.results_json) : null;
+
+          // Sync cache
+          cacheSet(videoId, {
+            status: r.status,
+            progress: r.progress || 0,
+            results: parsedResults,
+            error: r.error_message || null,
+          });
+
+          if (r.status === 'FAILED') {
+            return res.status(500).json({
+              success: false,
+              status: r.status,
+              error: r.error_message || 'Processing failed',
+            });
+          }
+
+          return res.json({
+            success: true,
+            status: r.status,
+            progress: r.progress || 0,
+            results: parsedResults,
+            uploadedAt: r.uploaded_at,
+            startedAt: r.processing_started_at,
+            completedAt: r.processing_completed_at,
+          });
+        }
+      } catch (dbErr) {
+        logger.warn(`DB results fetch failed for job ${videoId}: ${dbErr.message}`);
+      }
+    }
 
     if (!job) {
       return res.status(404).json({ success: false, error: 'Video job not found' });
     }
 
-    if (job.status === 'failed') {
+    if (job.status === 'FAILED') {
       return res.status(500).json({
         success: false,
         status: job.status,
-        error: job.error
+        error: job.error,
       });
     }
 
@@ -157,37 +319,38 @@ export async function getResults(req, res, next) {
       results: job.results,
       uploadedAt: job.uploadedAt,
       startedAt: job.startedAt,
-      completedAt: job.completedAt
+      completedAt: job.completedAt,
     });
+
   } catch (error) {
     logger.error('getResults failed:', error.message);
     return next(error);
   }
 }
 
-/**
- * GET /api/video/list
- * List all jobs (for debugging)
- */
+// ============================================================================
+// GET /api/video/list
+// ============================================================================
 export async function listVideos(req, res, next) {
   try {
-    const jobsArray = Array.from(jobs.values()).map(job => ({
-      id: job.id,
-      filename: job.filename,
-      status: job.status,
-      uploadedAt: job.uploadedAt,
-      startedAt: job.startedAt,
-      completedAt: job.completedAt,
-      hasResults: !!job.results
-    }));
-
+    const dbRows = await pool.query(
+      `SELECT id, filename, status, progress, total_people, risk_level,
+              uploaded_at, processing_completed_at
+       FROM video_jobs ORDER BY uploaded_at DESC LIMIT 50`
+    );
     return res.json({
       success: true,
-      jobs: jobsArray,
-      total: jobsArray.length
+      jobs: dbRows.rows,
+      total: dbRows.rows.length,
     });
   } catch (error) {
-    logger.error('listVideos failed:', error.message);
-    return next(error);
+    // Fall back to cache if DB is down
+    const jobsArray = Array.from(jobCache.values()).map((j) => ({
+      id: j.id,
+      filename: j.filename,
+      status: j.status,
+      uploadedAt: j.uploadedAt,
+    }));
+    return res.json({ success: true, jobs: jobsArray, total: jobsArray.length });
   }
 }

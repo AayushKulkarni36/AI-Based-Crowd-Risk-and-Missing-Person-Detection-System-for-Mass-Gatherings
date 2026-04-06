@@ -1,5 +1,5 @@
 import { motion } from 'framer-motion';
-import { Plus, Search, CheckCircle2, Trash2 } from 'lucide-react';
+import { Plus, Search, CheckCircle2, Trash2, Brain, AlertCircle } from 'lucide-react';
 import { useState, useEffect, useCallback } from 'react';
 import { Card, Button, Modal } from '../components/ui/Common';
 import { useForm } from 'react-hook-form';
@@ -9,7 +9,7 @@ import { toast } from 'sonner';
 import { api, MissingPerson } from '../services/api';
 import { cn } from '../lib/utils';
 
-// ── Zod schema — handle FileList to File coercion ─────────────────────────
+// ── Zod schema ─────────────────────────────────────────────────────────────
 const PersonSchema = z.object({
   name: z.string().min(2, 'Name must be at least 2 characters'),
   age: z.string().min(1, 'Age is required').transform((v) => parseInt(v, 10)).pipe(
@@ -29,12 +29,13 @@ const PersonSchema = z.object({
 
 type PersonFormData = {
   name: string;
-  age: string; // kept as string in form, transformed on submit
+  age: string;
   gender: 'Male' | 'Female' | 'Other';
   description?: string;
   photo: FileList | File | null;
 };
 
+// ── Person Card ─────────────────────────────────────────────────────────────
 function PersonCard({
   person,
   onMarkFound,
@@ -60,7 +61,6 @@ function PersonCard({
             alt={person.name}
             className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
             onError={(e) => {
-              // If image fails, show initials fallback
               (e.currentTarget as HTMLImageElement).style.display = 'none';
               (e.currentTarget.nextElementSibling as HTMLElement | null)?.removeAttribute('hidden');
             }}
@@ -74,7 +74,8 @@ function PersonCard({
         >
           <span className="text-5xl font-bold text-slate-400">{initials}</span>
         </div>
-        {/* Status badge overlay */}
+
+        {/* Status badge */}
         <div className="absolute top-3 right-3">
           <span className={cn(
             'px-2 py-1 rounded-full text-xs font-bold border',
@@ -87,6 +88,21 @@ function PersonCard({
             {person.status}
           </span>
         </div>
+
+        {/* Face enrollment badge */}
+        <div className="absolute top-3 left-3">
+          {person.face_enrolled ? (
+            <span className="flex items-center gap-1 px-2 py-1 rounded-full text-xs font-bold bg-blue-500/20 border border-blue-500/40 text-blue-300">
+              <Brain className="w-3 h-3" />
+              AI Enrolled
+            </span>
+          ) : (
+            <span className="flex items-center gap-1 px-2 py-1 rounded-full text-xs font-bold bg-slate-700/60 border border-slate-600/40 text-slate-400">
+              <AlertCircle className="w-3 h-3" />
+              No Face
+            </span>
+          )}
+        </div>
       </div>
 
       {/* Info */}
@@ -98,9 +114,20 @@ function PersonCard({
         {person.last_seen_location && (
           <p className="text-slate-500 text-xs mb-2 truncate">📍 {person.last_seen_location}</p>
         )}
+        {person.description && (
+          <p className="text-slate-500 text-xs mb-2 truncate">{person.description}</p>
+        )}
         <p className="text-xs text-slate-600 mb-4">
           Reported: {new Date(person.reported_date).toLocaleDateString()}
         </p>
+
+        {/* Face enrollment info */}
+        {person.face_enrolled && (
+          <p className="text-xs text-blue-400 mb-3 flex items-center gap-1">
+            <Brain className="w-3 h-3" />
+            FaceNet 512-dim embedding stored — active in matching pipeline
+          </p>
+        )}
 
         {/* Actions */}
         <div className="flex gap-2">
@@ -144,6 +171,7 @@ function LoadingSkeleton() {
   );
 }
 
+// ── Page ────────────────────────────────────────────────────────────────────
 export default function MissingPersons() {
   const [persons, setPersons] = useState<MissingPerson[]>([]);
   const [loading, setLoading] = useState(true);
@@ -181,18 +209,21 @@ export default function MissingPersons() {
     formData.append('gender', data.gender);
     if (data.description) formData.append('description', data.description);
 
-    // Handle FileList → File coercion
     const file = data.photo instanceof FileList ? data.photo[0] : data.photo as File;
     if (file) formData.append('photo', file);
 
     try {
       const res = await api.registerMissingPerson(formData);
       setPersons(prev => [res.person, ...prev]);
-      toast.success(
-        res.faceEnrolled
-          ? 'Profile created & face enrolled!'
-          : 'Profile created (face enrollment skipped — AI service offline)'
-      );
+
+      if (res.faceEnrolled) {
+        toast.success('✅ Profile created & face enrolled in AI matching pipeline!');
+      } else if (res.faceError) {
+        toast.warning(`Profile created — face enrollment failed: ${res.faceError}`);
+      } else {
+        toast.info('Profile created (upload a photo for face matching)');
+      }
+
       setIsAddModalOpen(false);
       reset();
     } catch (err: any) {
@@ -226,6 +257,11 @@ export default function MissingPersons() {
     return matchesSearch && matchesStatus;
   });
 
+  // Stats
+  const enrolledCount = persons.filter(p => p.face_enrolled).length;
+  const activeCount = persons.filter(p => p.status === 'ACTIVE').length;
+  const foundCount = persons.filter(p => p.status === 'FOUND').length;
+
   return (
     <motion.div
       initial={{ opacity: 0, y: 20 }}
@@ -235,10 +271,28 @@ export default function MissingPersons() {
       <div>
         <h1 className="text-4xl font-bold text-white mb-2">Missing Persons Database</h1>
         <p className="text-slate-400">
-          Manage missing person profiles and face enrollment for detection
+          Manage missing person profiles and face enrollment for AI detection
           {!loading && <span className="ml-2 text-brand-accent">({persons.length} registered)</span>}
         </p>
       </div>
+
+      {/* Stats strip */}
+      {!loading && persons.length > 0 && (
+        <div className="grid grid-cols-3 gap-4">
+          <div className="bg-slate-900/50 border border-slate-700/50 rounded-xl p-4 text-center">
+            <p className="text-2xl font-bold text-red-400">{activeCount}</p>
+            <p className="text-xs text-slate-400 mt-1">Active Cases</p>
+          </div>
+          <div className="bg-slate-900/50 border border-blue-500/20 rounded-xl p-4 text-center">
+            <p className="text-2xl font-bold text-blue-400">{enrolledCount}</p>
+            <p className="text-xs text-slate-400 mt-1">AI Face Enrolled</p>
+          </div>
+          <div className="bg-slate-900/50 border border-emerald-500/20 rounded-xl p-4 text-center">
+            <p className="text-2xl font-bold text-emerald-400">{foundCount}</p>
+            <p className="text-xs text-slate-400 mt-1">Found</p>
+          </div>
+        </div>
+      )}
 
       {/* Search & Filter Bar */}
       <Card className="flex flex-col md:flex-row gap-4">
@@ -350,7 +404,9 @@ export default function MissingPersons() {
           </div>
 
           <div>
-            <label className="block text-sm font-medium text-white mb-2">Reference Photo *</label>
+            <label className="block text-sm font-medium text-white mb-2">
+              Reference Photo * <span className="text-blue-400 text-xs">(Required for AI face matching)</span>
+            </label>
             <input
               {...register('photo')}
               type="file"
@@ -358,7 +414,9 @@ export default function MissingPersons() {
               className="w-full px-3 py-2 bg-slate-800/50 border border-slate-700 rounded-lg text-white file:text-white file:bg-slate-700 file:border-0 file:rounded file:cursor-pointer focus:outline-none focus:border-brand-accent"
             />
             {errors.photo && <p className="text-red-400 text-xs mt-1">{String(errors.photo.message)}</p>}
-            <p className="text-xs text-slate-500 mt-1">Clear face photo required for face matching</p>
+            <p className="text-xs text-slate-500 mt-1">
+              Clear face photo — will generate a 512-dim FaceNet embedding for real-time matching in CCTV footage
+            </p>
           </div>
 
           <div>
@@ -370,6 +428,13 @@ export default function MissingPersons() {
               rows={3}
             />
           </div>
+
+          {isSubmitting && (
+            <div className="flex items-center gap-2 text-blue-400 text-sm bg-blue-500/10 border border-blue-500/20 rounded-lg p-3">
+              <Brain className="w-4 h-4 animate-pulse" />
+              Running FaceNet enrollment — extracting 512-dim embedding from photo...
+            </div>
+          )}
 
           <div className="flex gap-2 pt-4">
             <Button
@@ -388,7 +453,7 @@ export default function MissingPersons() {
               className="flex-1"
               disabled={isSubmitting}
             >
-              {isSubmitting ? 'Creating...' : 'Create Profile'}
+              {isSubmitting ? 'Enrolling Face...' : 'Create Profile'}
             </Button>
           </div>
         </form>

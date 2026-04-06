@@ -19,6 +19,7 @@ interface UIAlert {
   timestamp: Date;
   isRead: boolean;
   severity: Severity;
+  imagePath?: string;
 }
 
 function toSeverity(risk: string): Severity {
@@ -45,6 +46,7 @@ function dbAlertToUI(a: AlertLog): UIAlert {
     timestamp: new Date(a.created_at),
     isRead: false,
     severity: toSeverity(a.risk_level),
+    imagePath: a.image_path || undefined,
   };
 }
 
@@ -257,6 +259,13 @@ export default function Alerts() {
                       <RiskBadge level={alert.severity} />
                     </div>
                   </div>
+                  {alert.imagePath ? (
+                    <img
+                      src={`http://localhost:5000/${alert.imagePath}`}
+                      alt={alert.title}
+                      className="w-16 h-16 rounded-md object-cover border border-white/10 flex-shrink-0"
+                    />
+                  ) : null}
                   <div className="flex-shrink-0 flex items-center gap-2">
                     {!alert.isRead && <div className="w-2 h-2 bg-brand-accent rounded-full" />}
                     <button

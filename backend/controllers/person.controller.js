@@ -1,20 +1,85 @@
 import path from 'path';
 import { fileURLToPath } from 'url';
-import axios from 'axios';
+import { spawn } from 'child_process';
 import pool from '../config/db.js';
 import logger from '../utils/logger.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const FACE_API_URL = process.env.PYTHON_API_URL || 'http://localhost:8001';
+
+// ============================================================================
+// FACE ENROLLMENT HELPER  (awaitable — resolves when Python process closes)
+// ============================================================================
+
+/**
+ * Run enroll.py and wait for result.
+ * @returns {{ success: boolean, embedding: number[]|null, error: string|null }}
+ */
+function runEnrollment(imagePath) {
+  return new Promise((resolve) => {
+    const pythonPath =
+      process.env.PYTHON_PATH ||
+      path.join(__dirname, '../../venv/Scripts/python.exe');
+    const enrollScript = path.join(__dirname, '../../src/face_recognition/enroll.py');
+
+    let stdout = '';
+    let stderr = '';
+
+    let proc;
+    try {
+      proc = spawn(pythonPath, [enrollScript, '--image', imagePath], {
+        stdio: ['ignore', 'pipe', 'pipe'],
+      });
+    } catch (spawnErr) {
+      return resolve({ success: false, embedding: null, error: spawnErr.message });
+    }
+
+    // 60-second timeout
+    const timer = setTimeout(() => {
+      try { proc.kill(); } catch (_) {}
+      resolve({ success: false, embedding: null, error: 'Enrollment timeout (60s)' });
+    }, 60_000);
+
+    proc.stdout.on('data', (d) => { stdout += d.toString(); });
+    proc.stderr.on('data', (d) => { stderr += d.toString(); });
+
+    proc.on('close', (code) => {
+      clearTimeout(timer);
+      if (code !== 0) {
+        return resolve({
+          success: false,
+          embedding: null,
+          error: `enroll.py exited ${code}: ${stderr.slice(-300)}`,
+        });
+      }
+      try {
+        const parsed = JSON.parse(stdout.trim());
+        if (parsed.success && Array.isArray(parsed.embedding)) {
+          return resolve({ success: true, embedding: parsed.embedding, error: null });
+        }
+        return resolve({ success: false, embedding: null, error: parsed.error || 'No face detected' });
+      } catch (parseErr) {
+        return resolve({ success: false, embedding: null, error: 'Invalid JSON from enroll.py' });
+      }
+    });
+
+    proc.on('error', (err) => {
+      clearTimeout(timer);
+      resolve({ success: false, embedding: null, error: err.message });
+    });
+  });
+}
+
+// ============================================================================
+// CONTROLLERS
+// ============================================================================
 
 export async function getAllPersons(_req, res, next) {
   try {
-    // Real columns: id, name, age, gender, description, photo_path, embedding,
-    //               reported_date, last_seen_location, contact_info, status, found_timestamp
     const result = await pool.query(
       `SELECT id, name, age, gender, description, photo_path,
               reported_date, last_seen_location, contact_info,
-              status, found_timestamp
+              status, found_timestamp,
+              (face_vector IS NOT NULL) AS face_enrolled
        FROM missing_persons
        WHERE status != 'INACTIVE'
        ORDER BY reported_date DESC`
@@ -22,6 +87,20 @@ export async function getAllPersons(_req, res, next) {
     return res.json({ success: true, persons: result.rows });
   } catch (error) {
     logger.error('getAllPersons failed:', error.message);
+    return next(error);
+  }
+}
+
+/**
+ * POST /api/persons/register-missing-person  — spec-friendly alias
+ */
+export async function registerMissingPerson(req, res, next) {
+  try {
+    req.body.gender = req.body.gender ?? null;
+    req.body.last_seen_location = req.body.last_seen_location ?? null;
+    req.body.contact_info = req.body.contact_info ?? null;
+    return await addPerson(req, res, next);
+  } catch (error) {
     return next(error);
   }
 }
@@ -34,9 +113,9 @@ export async function addPerson(req, res, next) {
       return res.status(400).json({ success: false, error: 'Name is required' });
     }
 
-    // photo_path from multer if file uploaded
     const photo_path = req.file ? req.file.path.replace(/\\/g, '/') : null;
 
+    // 1. Insert person record first
     const result = await pool.query(
       `INSERT INTO missing_persons
          (name, age, gender, description, last_seen_location, contact_info, photo_path, status, reported_date)
@@ -49,78 +128,40 @@ export async function addPerson(req, res, next) {
 
     const person = result.rows[0];
 
-    // Attempt face enrollment — non-blocking, failure is OK
+    // 2. Run face enrollment — AWAITED so response reflects real result
     let faceEnrolled = false;
     let faceError = null;
+
     if (req.file) {
-      try {
-        const { spawn } = await import('child_process');
-        const nodePath = (await import('path')).default;
-        const pythonPath = process.env.PYTHON_PATH || nodePath.join(__dirname, '../../venv/Scripts/python.exe');
-        const enrollScript = nodePath.join(__dirname, '../../src/face_recognition/enroll.py');
+      logger.info(`Running face enrollment for person ${person.id} (${name})...`);
+      const enrollResult = await runEnrollment(req.file.path);
 
-        let enrollOutput = '';
-        let enrollError = '';
-
-        const enrollProc = spawn(pythonPath, [enrollScript, '--image', req.file.path]);
-
-        enrollProc.stdout.on('data', (data) => {
-          enrollOutput += data.toString();
-        });
-
-        enrollProc.stderr.on('data', (data) => {
-          enrollError += data.toString();
-        });
-
-        enrollProc.on('close', async (code) => {
-          if (code === 0 && enrollOutput) {
-            try {
-              const enrollData = JSON.parse(enrollOutput.trim());
-              if (enrollData.success && enrollData.embedding) {
-                // Store embedding (as array of floats) in DB using pgvector
-                const embeddingArray = enrollData.embedding;
-                await pool.query(
-                  `UPDATE missing_persons
-                   SET face_vector = $1::vector,
-                       embedding_model = 'facenet',
-                       embedding_created_at = NOW()
-                   WHERE id = $2`,
-                  [JSON.stringify(embeddingArray), person.id]
-                );
-                faceEnrolled = true;
-                logger.info(`Face enrolled for person ${person.id}`);
-              } else if (!enrollData.success) {
-                faceError = enrollData.error || 'No face detected in image';
-                logger.warn(`Face enrollment skipped for person ${person.id}: ${faceError}`);
-              }
-            } catch (parseErr) {
-              logger.warn(`Failed to parse face enrollment output: ${parseErr.message}`);
-              faceError = 'Failed to process face enrollment';
-            }
-          } else if (code !== 0) {
-            faceError = `Python error: ${enrollError.slice(-200)}`;
-            logger.warn(`Face enrollment process failed: ${faceError}`);
-          }
-        });
-
-        enrollProc.on('error', (err) => {
-          faceError = `Failed to spawn enroll process: ${err.message}`;
-          logger.warn(faceError);
-        });
-      } catch (faceErr) {
-        faceError = faceErr.message;
-        logger.warn(`Face enrollment failed for person ${person.id}: ${faceErr.message}`);
+      if (enrollResult.success && enrollResult.embedding) {
+        try {
+          await pool.query(
+            `UPDATE missing_persons SET face_vector = $1 WHERE id = $2`,
+            [JSON.stringify(enrollResult.embedding), person.id]
+          );
+          faceEnrolled = true;
+          logger.info(`✅ Face enrolled for person ${person.id} (${name}) — ${enrollResult.embedding.length}-dim embedding`);
+        } catch (dbErr) {
+          faceError = `DB update failed: ${dbErr.message}`;
+          logger.error(`Failed to save embedding for person ${person.id}: ${dbErr.message}`);
+        }
+      } else {
+        faceError = enrollResult.error || 'No face detected in photo';
+        logger.warn(`Face enrollment failed for person ${person.id}: ${faceError}`);
       }
     }
 
     return res.status(201).json({
       success: true,
-      person,
+      person: { ...person, face_enrolled: faceEnrolled },
       faceEnrolled,
       faceError: faceError || null,
       message: faceEnrolled
-        ? 'Person registered and face enrolled'
-        : `Person registered ${faceError ? `(face error: ${faceError})` : '(face enrollment skipped)'}`
+        ? `✅ Person registered and face enrolled (512-dim embedding stored)`
+        : `Person registered${faceError ? ` (face error: ${faceError})` : ' (no photo provided)'}`,
     });
   } catch (error) {
     logger.error('addPerson failed:', error.message);
@@ -135,7 +176,10 @@ export async function updatePerson(req, res, next) {
 
     const allowed = ['ACTIVE', 'FOUND', 'INACTIVE', 'POSSIBLE_MATCH'];
     if (!allowed.includes(status)) {
-      return res.status(400).json({ success: false, error: `Invalid status. Must be one of: ${allowed.join(', ')}` });
+      return res.status(400).json({
+        success: false,
+        error: `Invalid status. Must be one of: ${allowed.join(', ')}`,
+      });
     }
 
     const extra = status === 'FOUND' ? ', found_timestamp = NOW()' : '';
@@ -143,7 +187,8 @@ export async function updatePerson(req, res, next) {
     const result = await pool.query(
       `UPDATE missing_persons SET status = $1${extra} WHERE id = $2
        RETURNING id, name, age, gender, description, photo_path, status, reported_date,
-                 last_seen_location, contact_info, found_timestamp`,
+                 last_seen_location, contact_info, found_timestamp,
+                 (face_vector IS NOT NULL) AS face_enrolled`,
       [status, id]
     );
 
@@ -161,7 +206,6 @@ export async function updatePerson(req, res, next) {
 export async function deletePerson(req, res, next) {
   try {
     const { id } = req.params;
-    // Soft delete: set status = INACTIVE
     const result = await pool.query(
       "UPDATE missing_persons SET status = 'INACTIVE' WHERE id = $1 AND status != 'INACTIVE' RETURNING id",
       [id]

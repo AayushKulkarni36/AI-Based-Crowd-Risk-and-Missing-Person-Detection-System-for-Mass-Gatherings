@@ -35,6 +35,7 @@ export interface MissingPerson {
   found_timestamp?: string;
   last_seen_location?: string;
   contact_info?: string;
+  face_enrolled?: boolean; // true when a 512-dim embedding is stored in DB
 }
 
 export interface StatsOverview {
@@ -55,6 +56,7 @@ export interface AlertLog {
   person_count?: number;
   message?: string;
   location?: string;
+  image_path?: string;
 }
 
 // Helper: get auth header
@@ -82,13 +84,14 @@ export const api = {
 
     const data = await res.json();
     if (!res.ok) throw new Error(data.error || `Upload failed (${res.status})`);
-    return { videoJobId: data.videoJobId };
+    // Backend returns `videoId`; alias it as `videoJobId` for consistency
+    return { videoJobId: data.videoId ?? data.videoJobId };
   },
 
   /**
    * Start processing a video by its job ID.
    */
-  processVideo: async (videoJobId: number): Promise<{ jobId: string; status: string }> => {
+  processVideo: async (videoJobId: number | string): Promise<{ jobId: string; status: string }> => {
     const res = await fetch(`${API_BASE}/video/process/${videoJobId}`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', ...authHeader() },
@@ -101,7 +104,7 @@ export const api = {
   /**
    * Poll results for a video job.
    */
-  getVideoResults: async (videoJobId: number): Promise<VideoJobStatus> => {
+  getVideoResults: async (videoJobId: number | string): Promise<VideoJobStatus> => {
     const res = await fetch(`${API_BASE}/video/results/${videoJobId}`, {
       headers: authHeader(),
     });
@@ -134,8 +137,8 @@ export const api = {
     return await res.json();
   },
 
-  registerMissingPerson: async (formData: FormData): Promise<{ success: boolean; person: MissingPerson; faceEnrolled: boolean }> => {
-    const res = await fetch(`${API_BASE}/persons`, {
+  registerMissingPerson: async (formData: FormData): Promise<{ success: boolean; person: MissingPerson; faceEnrolled: boolean; faceError?: string | null }> => {
+    const res = await fetch(`${API_BASE}/persons/register-missing-person`, {
       method: 'POST',
       headers: authHeader(), // No Content-Type — browser handles multipart
       body: formData,

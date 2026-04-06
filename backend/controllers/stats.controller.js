@@ -61,7 +61,8 @@ export async function getAlerts(_req, res, next) {
         risk_level,
         person_count,
         message,
-        location
+        location,
+        image_path
        FROM alert_logs
        ORDER BY timestamp DESC
        LIMIT 50`

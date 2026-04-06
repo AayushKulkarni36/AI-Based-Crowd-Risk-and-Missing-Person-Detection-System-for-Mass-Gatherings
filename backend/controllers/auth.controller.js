@@ -162,8 +162,8 @@ export async function signup(req, res, next) {
 
     // Insert user (always OPERATOR role)
     const result = await pool.query(
-      `INSERT INTO users (full_name, email, password_hash, role, is_active, created_at)
-       VALUES ($1, $2, $3, 'OPERATOR', true, NOW())
+      `INSERT INTO users (full_name, name, email, password_hash, role, is_active, created_at)
+       VALUES ($1, $1, $2, $3, 'OPERATOR', true, NOW())
        RETURNING id, email, full_name, role`,
       [full_name, email, passwordHash]
     );

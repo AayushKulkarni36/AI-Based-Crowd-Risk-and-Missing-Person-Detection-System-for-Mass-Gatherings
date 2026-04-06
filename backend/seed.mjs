@@ -7,15 +7,15 @@ const pool = new Pool({
   port: 5432,
   database: 'missing_persons',
   user: 'postgres',
-  password: 'postgres123'
+  password: 'postgres'
 });
 
 async function seed() {
   const hash = await bcrypt.hash('admin@123', 10);
   // Insert admin user
   const r1 = await pool.query(
-    `INSERT INTO users (email, password_hash, name, role, is_active)
-     VALUES ($1, $2, 'Admin User', 'ADMIN', true)
+    `INSERT INTO users (email, password_hash, name, full_name, role, is_active)
+     VALUES ($1, $2, 'Admin User', 'Admin User', 'ADMIN', true)
      ON CONFLICT (email) DO NOTHING`,
     ['admin@crowdsafe.com', hash]
   );
