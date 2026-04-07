@@ -8,6 +8,7 @@ import { z } from 'zod';
 import { toast } from 'sonner';
 import { api, MissingPerson } from '../services/api';
 import { cn } from '../lib/utils';
+import { useAuth } from '../context/AuthContext';
 
 // ── Zod schema ─────────────────────────────────────────────────────────────
 const PersonSchema = z.object({
@@ -40,10 +41,12 @@ function PersonCard({
   person,
   onMarkFound,
   onDelete,
+  canEdit,
 }: {
   person: MissingPerson;
   onMarkFound: (id: number) => void;
   onDelete: (id: number) => void;
+  canEdit: boolean;
 }) {
   const photoUrl = api.getPhotoUrl(person.photo_path);
   const initials = person.name.charAt(0).toUpperCase();
@@ -131,27 +134,35 @@ function PersonCard({
 
         {/* Actions */}
         <div className="flex gap-2">
-          {person.status === 'ACTIVE' || person.status === 'POSSIBLE_MATCH' ? (
-            <button
-              onClick={() => onMarkFound(person.id)}
-              className="flex-1 flex items-center justify-center gap-1.5 py-1.5 px-2 text-xs rounded-lg bg-emerald-500/10 text-emerald-400 border border-emerald-500/30 hover:bg-emerald-500/20 transition-colors"
-            >
-              <CheckCircle2 className="w-3.5 h-3.5" />
-              Mark Found
-            </button>
+          {canEdit ? (
+            <>
+              {person.status === 'ACTIVE' || person.status === 'POSSIBLE_MATCH' ? (
+                <button
+                  onClick={() => onMarkFound(person.id)}
+                  className="flex-1 flex items-center justify-center gap-1.5 py-1.5 px-2 text-xs rounded-lg bg-emerald-500/10 text-emerald-400 border border-emerald-500/30 hover:bg-emerald-500/20 transition-colors"
+                >
+                  <CheckCircle2 className="w-3.5 h-3.5" />
+                  Mark Found
+                </button>
+              ) : (
+                <div className="flex-1 flex items-center justify-center gap-1.5 py-1.5 px-2 text-xs rounded-lg bg-slate-800 text-slate-500 border border-slate-700">
+                  <CheckCircle2 className="w-3.5 h-3.5" />
+                  Found
+                </div>
+              )}
+              <button
+                onClick={() => onDelete(person.id)}
+                className="p-1.5 rounded-lg bg-red-500/10 text-red-400 border border-red-500/30 hover:bg-red-500/20 transition-colors"
+                title="Remove from database"
+              >
+                <Trash2 className="w-3.5 h-3.5" />
+              </button>
+            </>
           ) : (
             <div className="flex-1 flex items-center justify-center gap-1.5 py-1.5 px-2 text-xs rounded-lg bg-slate-800 text-slate-500 border border-slate-700">
-              <CheckCircle2 className="w-3.5 h-3.5" />
-              Found
+              View only
             </div>
           )}
-          <button
-            onClick={() => onDelete(person.id)}
-            className="p-1.5 rounded-lg bg-red-500/10 text-red-400 border border-red-500/30 hover:bg-red-500/20 transition-colors"
-            title="Remove from database"
-          >
-            <Trash2 className="w-3.5 h-3.5" />
-          </button>
         </div>
       </div>
     </motion.div>
@@ -173,6 +184,8 @@ function LoadingSkeleton() {
 
 // ── Page ────────────────────────────────────────────────────────────────────
 export default function MissingPersons() {
+  const { user } = useAuth();
+  const isAdmin = user?.role === 'ADMIN';
   const [persons, setPersons] = useState<MissingPerson[]>([]);
   const [loading, setLoading] = useState(true);
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
@@ -274,6 +287,11 @@ export default function MissingPersons() {
           Manage missing person profiles and face enrollment for AI detection
           {!loading && <span className="ml-2 text-brand-accent">({persons.length} registered)</span>}
         </p>
+        {!isAdmin && (
+          <p className="text-xs text-slate-500 mt-2">
+            View-only mode: only admins can add, update, or delete records.
+          </p>
+        )}
       </div>
 
       {/* Stats strip */}
@@ -316,14 +334,16 @@ export default function MissingPersons() {
           <option value="FOUND">Found</option>
           <option value="POSSIBLE_MATCH">Possible Match</option>
         </select>
-        <Button
-          variant="primary"
-          onClick={() => setIsAddModalOpen(true)}
-          className="whitespace-nowrap"
-        >
-          <Plus className="w-4 h-4 mr-2" />
-          Add Person
-        </Button>
+        {isAdmin && (
+          <Button
+            variant="primary"
+            onClick={() => setIsAddModalOpen(true)}
+            className="whitespace-nowrap"
+          >
+            <Plus className="w-4 h-4 mr-2" />
+            Add Person
+          </Button>
+        )}
       </Card>
 
       {/* Persons Grid */}
@@ -344,6 +364,7 @@ export default function MissingPersons() {
                 person={person}
                 onMarkFound={handleMarkFound}
                 onDelete={handleDelete}
+                canEdit={isAdmin}
               />
             </motion.div>
           ))}

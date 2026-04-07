@@ -52,6 +52,23 @@ export function requireAdmin(req, res, next) {
 }
 
 /**
+ * Middleware factory: allow only selected roles
+ */
+export function requireRole(...allowedRoles) {
+  return (req, res, next) => {
+    requireAuth(req, res, () => {
+      if (!allowedRoles.includes(req.user.role)) {
+        return res.status(403).json({
+          success: false,
+          error: 'Insufficient permissions'
+        });
+      }
+      next();
+    });
+  };
+}
+
+/**
  * Generate JWT token for user
  */
 export function generateToken(user) {
@@ -66,4 +83,4 @@ export function generateToken(user) {
   );
 }
 
-export default { requireAuth, requireAdmin, generateToken };
+export default { requireAuth, requireAdmin, requireRole, generateToken };

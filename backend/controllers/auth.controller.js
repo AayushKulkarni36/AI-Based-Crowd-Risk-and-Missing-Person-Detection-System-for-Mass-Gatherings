@@ -40,7 +40,7 @@ export async function login(req, res, next) {
 
     // Fetch user from database
     const result = await pool.query(
-      'SELECT id, email, password_hash, role, full_name FROM users WHERE email = $1 AND is_active = true',
+      'SELECT id, email, password_hash, role, name FROM users WHERE email = $1 AND is_active = true',
       [email]
     );
 
@@ -91,7 +91,7 @@ export async function login(req, res, next) {
       user: {
         id: user.id,
         email: user.email,
-        full_name: user.full_name,
+        name: user.name,
         role: user.role
       }
     });
@@ -106,17 +106,17 @@ export async function login(req, res, next) {
  */
 export async function signup(req, res, next) {
   try {
-    const { full_name, email, password, confirmPassword } = req.body;
+    const { name, email, password, confirmPassword } = req.body;
 
     // Validate inputs
-    if (!full_name || !email || !password || !confirmPassword) {
+    if (!name || !email || !password || !confirmPassword) {
       return res.status(400).json({
         success: false,
         error: 'All fields are required'
       });
     }
 
-    if (full_name.length < 2 || full_name.length > 100) {
+    if (name.length < 2 || name.length > 100) {
       return res.status(400).json({
         success: false,
         error: 'Full name must be between 2 and 100 characters'
@@ -162,10 +162,10 @@ export async function signup(req, res, next) {
 
     // Insert user (always OPERATOR role)
     const result = await pool.query(
-      `INSERT INTO users (full_name, name, email, password_hash, role, is_active, created_at)
-       VALUES ($1, $1, $2, $3, 'OPERATOR', true, NOW())
-       RETURNING id, email, full_name, role`,
-      [full_name, email, passwordHash]
+      `INSERT INTO users (name, email, password_hash, role, is_active, created_at)
+       VALUES ($1, $2, $3, 'OPERATOR', true, NOW())
+       RETURNING id, email, name, role`,
+      [name, email, passwordHash]
     );
 
     const user = result.rows[0];
@@ -181,7 +181,7 @@ export async function signup(req, res, next) {
       user: {
         id: user.id,
         email: user.email,
-        full_name: user.full_name,
+        name: user.name,
         role: user.role
       }
     });
@@ -197,7 +197,7 @@ export async function signup(req, res, next) {
 export async function getMe(req, res, next) {
   try {
     const result = await pool.query(
-      'SELECT id, email, full_name, role, created_at, last_login FROM users WHERE id = $1 AND is_active = true',
+      'SELECT id, email, name, role, created_at, last_login FROM users WHERE id = $1 AND is_active = true',
       [req.user.id]
     );
 

@@ -21,7 +21,7 @@ cursor.execute("SELECT password_hash FROM users WHERE email = 'admin@crowdsafe.c
 row = cursor.fetchone()
 if row:
     db_hash = row[0]
-    print(f"Hash in DB: {db_hash}")
+    print(f"Hash in DB: {db_hash}") 
     db_result = bcrypt.checkpw(password.encode('utf-8'), db_hash.encode('utf-8'))
     print(f"Password matches DB hash: {db_result}")
 else:

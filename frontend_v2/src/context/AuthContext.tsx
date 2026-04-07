@@ -5,7 +5,7 @@ interface AuthUser {
     id: string;
     email: string;
     full_name: string;
-    role: 'ADMIN' | 'OPERATOR';
+    role: 'ADMIN' | 'OPERATOR' | 'USER';
     created_at?: string;
     last_login?: string;
 }
@@ -96,7 +96,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     ): Promise<void> => {
         try {
             const response = await axios.post(`${API_URL}/auth/signup`, {
-                full_name: fullName,
+                name: fullName,
                 email,
                 password,
                 confirmPassword
