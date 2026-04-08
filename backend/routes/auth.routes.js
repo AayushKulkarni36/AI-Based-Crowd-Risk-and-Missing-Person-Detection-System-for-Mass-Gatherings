@@ -1,5 +1,5 @@
 import express from 'express';
-import { login, signup, getMe, changePassword } from '../controllers/auth.controller.js';
+import { login, signup, getMe, changePassword, refreshToken } from '../controllers/auth.controller.js';
 import { requireAuth } from '../middleware/auth.js';
 
 const router = express.Router();
@@ -31,5 +31,12 @@ router.get('/me', requireAuth, getMe);
  * Requires: Authorization header with Bearer token
  */
 router.post('/change-password', requireAuth, changePassword);
+
+/**
+ * POST /api/auth/refresh
+ * Exchange a still-valid JWT for a fresh one (resets expiry).
+ * Requires: Authorization header with Bearer token
+ */
+router.post('/refresh', requireAuth, refreshToken);
 
 export default router;

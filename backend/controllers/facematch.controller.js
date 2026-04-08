@@ -41,7 +41,7 @@ export async function runFaceMatch(req, res, next) {
     // Check if there are any enrolled active persons
     const personsResult = await pool.query(
       `SELECT COUNT(*) as count FROM missing_persons
-       WHERE status = 'ACTIVE' AND face_vector IS NOT NULL`
+       WHERE status != 'INACTIVE' AND face_vector IS NOT NULL`
     );
 
     const enrolledCount = parseInt(personsResult.rows[0].count);
@@ -171,11 +171,12 @@ export async function runFaceMatch(req, res, next) {
               [match.person_id, jobId, match.frame_number, match.confidence]
             );
 
-            // Update person status to POSSIBLE_MATCH if currently ACTIVE
+            // Auto-mark person as FOUND as soon as a valid face match is detected.
             await pool.query(
               `UPDATE missing_persons
-               SET status = 'POSSIBLE_MATCH'
-               WHERE id = $1 AND status = 'ACTIVE'`,
+               SET status = 'FOUND',
+                   found_timestamp = COALESCE(found_timestamp, NOW())
+               WHERE id = $1 AND status != 'FOUND'`,
               [match.person_id]
             );
 
@@ -323,11 +324,11 @@ export async function dismissMatch(req, res, next) {
       [matchId]
     );
 
-    // Set person back to ACTIVE (was POSSIBLE_MATCH)
+    // If admin dismisses a false-positive match, revert person to ACTIVE.
     await pool.query(
       `UPDATE missing_persons
        SET status = 'ACTIVE'
-       WHERE id = $1 AND status = 'POSSIBLE_MATCH'`,
+       WHERE id = $1 AND status IN ('POSSIBLE_MATCH', 'FOUND')`,
       [personId]
     );
 

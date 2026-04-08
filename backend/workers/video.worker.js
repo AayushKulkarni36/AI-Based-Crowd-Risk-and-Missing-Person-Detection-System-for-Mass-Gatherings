@@ -183,13 +183,16 @@ const worker = new Worker('video-processing', async (job) => {
           await pool.query(
             `INSERT INTO face_matches (video_job_id, missing_person_id, confidence, frame_number, status)
              VALUES ($1, $2, $3, $4, $5)`,
-            [videoJobId, match.personId, match.confidence, match.frameNumber, 'POSSIBLE_MATCH']
+            [videoJobId, match.personId, match.confidence, match.frameNumber, 'CONFIRMED']
           );
 
-          // Update missing person status
+          // Auto-mark matched person as FOUND
           await pool.query(
-            'UPDATE missing_persons SET status = $1 WHERE id = $2',
-            ['POSSIBLE_MATCH', match.personId]
+            `UPDATE missing_persons
+             SET status = 'FOUND',
+                 found_timestamp = COALESCE(found_timestamp, NOW())
+             WHERE id = $1 AND status != 'FOUND'`,
+            [match.personId]
           );
         } catch (matchErr) {
           logger.warn(`[Worker] Failed to save face match: ${matchErr.message}`);

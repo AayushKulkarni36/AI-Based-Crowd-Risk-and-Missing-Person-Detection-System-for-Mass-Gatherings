@@ -217,6 +217,38 @@ async function _runPython(videoId, filePath) {
           `Crowd detection completed: ${totalPeople} people (${riskLevel})`,
         ]
       );
+
+      // Persist face matches and auto-mark matched persons as FOUND.
+      if (Array.isArray(results.faceMatches) && results.faceMatches.length > 0) {
+        for (const match of results.faceMatches) {
+          const personId = Number(match.personId);
+          if (!personId) continue;
+
+          try {
+            await pool.query(
+              `INSERT INTO face_matches (video_job_id, missing_person_id, confidence, frame_number, status)
+               VALUES ($1, $2, $3, $4, $5)`,
+              [
+                Number(videoId),
+                personId,
+                Number(match.confidence || match.similarity || 0),
+                Number(match.frameNumber || 0),
+                'CONFIRMED'
+              ]
+            );
+
+            await pool.query(
+              `UPDATE missing_persons
+               SET status = 'FOUND',
+                   found_timestamp = COALESCE(found_timestamp, NOW())
+               WHERE id = $1 AND status != 'FOUND'`,
+              [personId]
+            );
+          } catch (matchErr) {
+            logger.warn(`Failed to persist face match for person ${personId}: ${matchErr.message}`);
+          }
+        }
+      }
     } catch (dbErr) {
       logger.warn(`DB update failed after processing job ${videoId}: ${dbErr.message}`);
     }

@@ -7,7 +7,7 @@ import { useState, useEffect, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
 import { cn } from '../lib/utils';
-import { api, StatsOverview, AlertLog } from '../services/api';
+import { api, StatsOverview, AlertLog, DetectionPoint } from '../services/api';
 import { toast } from 'sonner';
 
 interface ChartData { time: string; value: number; }
@@ -68,7 +68,7 @@ export default function Dashboard() {
   const [alerts, setAlerts] = useState<AlertLog[]>([]);
   const [statsLoading, setStatsLoading] = useState(true);
   const [alertsLoading, setAlertsLoading] = useState(true);
-  const [chartData] = useState<ChartData[]>(CHART_PLACEHOLDER);
+  const [chartData, setChartData] = useState<ChartData[]>(CHART_PLACEHOLDER);
 
   const fetchStats = useCallback(async () => {
     try {
@@ -92,10 +92,40 @@ export default function Dashboard() {
     }
   }, []);
 
+  const fetchDetectionsChart = useCallback(async () => {
+    try {
+      const data = await api.getDetectionsToday();
+      const points = data.points || [];
+      if (points.length === 0) {
+        setChartData(CHART_PLACEHOLDER);
+        return;
+      }
+      setChartData(
+        points.map((p: DetectionPoint) => ({
+          time: p.time,
+          value: Number(p.value || 0)
+        }))
+      );
+    } catch (_) {
+      // non-blocking
+    }
+  }, []);
+
   useEffect(() => {
     fetchStats();
     fetchAlerts();
-  }, [fetchStats, fetchAlerts]);
+    fetchDetectionsChart();
+  }, [fetchStats, fetchAlerts, fetchDetectionsChart]);
+
+  useEffect(() => {
+    // Keep dashboard counters fresh after background face-match updates.
+    const interval = setInterval(() => {
+      fetchStats();
+      fetchAlerts();
+      fetchDetectionsChart();
+    }, 10000);
+    return () => clearInterval(interval);
+  }, [fetchStats, fetchAlerts, fetchDetectionsChart]);
 
   return (
     <motion.div className="space-y-8" variants={container} initial="hidden" animate="show">

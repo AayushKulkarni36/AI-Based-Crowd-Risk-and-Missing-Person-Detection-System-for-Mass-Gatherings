@@ -24,7 +24,10 @@ export function spawnPythonProcess(videoPath, onProgress = null) {
       scriptPath,
       '--video', path.resolve(videoPath),
       '--json',
-      '--skip', process.env.SKIP_FRAMES || '3'
+      '--skip', process.env.SKIP_FRAMES_CROWD || process.env.SKIP_FRAMES || '3',
+      '--face-skip', process.env.SKIP_FRAMES_FACE || '3',
+      '--face-threshold', process.env.MISSING_PERSON_THRESHOLD || '0.60',
+      '--face-cooldown', process.env.MISSING_PERSON_COOLDOWN_SECONDS || '5'
     ];
 
     console.log(`[Python] Spawning: ${pythonPath} ${args.join(' ')}`);

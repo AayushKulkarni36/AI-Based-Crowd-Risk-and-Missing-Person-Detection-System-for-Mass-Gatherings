@@ -2,7 +2,9 @@ import jwt from 'jsonwebtoken';
 import logger from '../utils/logger.js';
 
 const JWT_SECRET = process.env.JWT_SECRET || 'your-dev-secret-key-change-in-production';
-const JWT_EXPIRY = process.env.JWT_EXPIRY || '8h';
+// Use 30 days in dev so tokens never expire during development sessions.
+// In production the env variable should be set to '8h' or shorter.
+const JWT_EXPIRY = process.env.JWT_EXPIRY || (process.env.NODE_ENV === 'production' ? '8h' : '30d');
 
 /**
  * Middleware: Verify JWT token and attach user to request

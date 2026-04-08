@@ -59,6 +59,19 @@ export interface AlertLog {
   image_path?: string;
 }
 
+export interface DetectionPoint {
+  time: string;
+  value: number;
+}
+
+export interface VideoListJob {
+  id: number | string;
+  filename?: string;
+  status: 'UPLOADED' | 'QUEUED' | 'PROCESSING' | 'COMPLETED' | 'FAILED';
+  progress?: number;
+  uploaded_at?: string;
+}
+
 // Helper: get auth header
 function authHeader(): Record<string, string> {
   const token = localStorage.getItem('authToken');
@@ -115,6 +128,12 @@ export const api = {
     return await res.json();
   },
 
+  listVideos: async (): Promise<{ success: boolean; jobs: VideoListJob[]; total: number }> => {
+    const res = await fetch(`${API_BASE}/video/list`, { headers: authHeader() });
+    if (!res.ok) throw new Error('Failed to fetch video jobs');
+    return await res.json();
+  },
+
   // ── Stats API ──────────────────────────────────────────────────────────────
 
   getStatsOverview: async (): Promise<StatsOverview> => {
@@ -126,6 +145,12 @@ export const api = {
   getAlerts: async (): Promise<{ alerts: AlertLog[] }> => {
     const res = await fetch(`${API_BASE}/stats/alerts`, { headers: authHeader() });
     if (!res.ok) throw new Error('Failed to fetch alerts');
+    return await res.json();
+  },
+
+  getDetectionsToday: async (): Promise<{ success: boolean; points: DetectionPoint[] }> => {
+    const res = await fetch(`${API_BASE}/stats/detections-today`, { headers: authHeader() });
+    if (!res.ok) throw new Error('Failed to fetch detections timeline');
     return await res.json();
   },
 

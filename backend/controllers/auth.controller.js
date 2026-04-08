@@ -291,4 +291,32 @@ export async function changePassword(req, res, next) {
   }
 }
 
-export default { login, signup, getMe, changePassword };
+/**
+ * REFRESH TOKEN - POST /api/auth/refresh
+ * Requires a valid (non-expired) JWT. Issues a brand-new token.
+ */
+export async function refreshToken(req, res, next) {
+  try {
+    // req.user is already set by requireAuth middleware
+    const result = await pool.query(
+      'SELECT id, email, name, role FROM users WHERE id = $1 AND is_active = true',
+      [req.user.id]
+    );
+
+    if (result.rows.length === 0) {
+      return res.status(401).json({ success: false, error: 'User not found or inactive' });
+    }
+
+    const user = result.rows[0];
+    const token = generateToken(user);
+
+    logger.info(`Token refreshed for user: ${user.email}`);
+
+    return res.json({ success: true, token });
+  } catch (error) {
+    logger.error('Token refresh failed:', error);
+    return next(error);
+  }
+}
+
+export default { login, signup, getMe, changePassword, refreshToken };

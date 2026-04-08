@@ -41,12 +41,14 @@ function PersonCard({
   person,
   onMarkFound,
   onDelete,
-  canEdit,
+  canMarkFound,
+  canDelete,
 }: {
   person: MissingPerson;
   onMarkFound: (id: number) => void;
   onDelete: (id: number) => void;
-  canEdit: boolean;
+  canMarkFound: boolean;
+  canDelete: boolean;
 }) {
   const photoUrl = api.getPhotoUrl(person.photo_path);
   const initials = person.name.charAt(0).toUpperCase();
@@ -134,9 +136,9 @@ function PersonCard({
 
         {/* Actions */}
         <div className="flex gap-2">
-          {canEdit ? (
+          {canMarkFound || canDelete ? (
             <>
-              {person.status === 'ACTIVE' || person.status === 'POSSIBLE_MATCH' ? (
+              {canMarkFound && (person.status === 'ACTIVE' || person.status === 'POSSIBLE_MATCH') ? (
                 <button
                   onClick={() => onMarkFound(person.id)}
                   className="flex-1 flex items-center justify-center gap-1.5 py-1.5 px-2 text-xs rounded-lg bg-emerald-500/10 text-emerald-400 border border-emerald-500/30 hover:bg-emerald-500/20 transition-colors"
@@ -144,19 +146,25 @@ function PersonCard({
                   <CheckCircle2 className="w-3.5 h-3.5" />
                   Mark Found
                 </button>
-              ) : (
+              ) : canMarkFound ? (
                 <div className="flex-1 flex items-center justify-center gap-1.5 py-1.5 px-2 text-xs rounded-lg bg-slate-800 text-slate-500 border border-slate-700">
                   <CheckCircle2 className="w-3.5 h-3.5" />
                   Found
                 </div>
+              ) : (
+                <div className="flex-1 flex items-center justify-center gap-1.5 py-1.5 px-2 text-xs rounded-lg bg-slate-800 text-slate-500 border border-slate-700">
+                  Read only
+                </div>
               )}
-              <button
-                onClick={() => onDelete(person.id)}
-                className="p-1.5 rounded-lg bg-red-500/10 text-red-400 border border-red-500/30 hover:bg-red-500/20 transition-colors"
-                title="Remove from database"
-              >
-                <Trash2 className="w-3.5 h-3.5" />
-              </button>
+              {canDelete && (
+                <button
+                  onClick={() => onDelete(person.id)}
+                  className="p-1.5 rounded-lg bg-red-500/10 text-red-400 border border-red-500/30 hover:bg-red-500/20 transition-colors"
+                  title="Remove from database"
+                >
+                  <Trash2 className="w-3.5 h-3.5" />
+                </button>
+              )}
             </>
           ) : (
             <div className="flex-1 flex items-center justify-center gap-1.5 py-1.5 px-2 text-xs rounded-lg bg-slate-800 text-slate-500 border border-slate-700">
@@ -186,6 +194,7 @@ function LoadingSkeleton() {
 export default function MissingPersons() {
   const { user } = useAuth();
   const isAdmin = user?.role === 'ADMIN';
+  const canAddPerson = user?.role === 'ADMIN' || user?.role === 'OPERATOR' || user?.role === 'USER';
   const [persons, setPersons] = useState<MissingPerson[]>([]);
   const [loading, setLoading] = useState(true);
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
@@ -214,6 +223,14 @@ export default function MissingPersons() {
   }, []);
 
   useEffect(() => { fetchPersons(); }, [fetchPersons]);
+
+  useEffect(() => {
+    // Refresh list periodically so FOUND status/count updates automatically.
+    const interval = setInterval(() => {
+      fetchPersons();
+    }, 10000);
+    return () => clearInterval(interval);
+  }, [fetchPersons]);
 
   const onSubmit = async (data: PersonFormData) => {
     const formData = new FormData();
@@ -289,7 +306,7 @@ export default function MissingPersons() {
         </p>
         {!isAdmin && (
           <p className="text-xs text-slate-500 mt-2">
-            View-only mode: only admins can add, update, or delete records.
+            Limited mode: you can add records, but only admins can delete.
           </p>
         )}
       </div>
@@ -334,7 +351,7 @@ export default function MissingPersons() {
           <option value="FOUND">Found</option>
           <option value="POSSIBLE_MATCH">Possible Match</option>
         </select>
-        {isAdmin && (
+        {canAddPerson && (
           <Button
             variant="primary"
             onClick={() => setIsAddModalOpen(true)}
@@ -364,7 +381,8 @@ export default function MissingPersons() {
                 person={person}
                 onMarkFound={handleMarkFound}
                 onDelete={handleDelete}
-                canEdit={isAdmin}
+                canMarkFound={isAdmin}
+                canDelete={isAdmin}
               />
             </motion.div>
           ))}

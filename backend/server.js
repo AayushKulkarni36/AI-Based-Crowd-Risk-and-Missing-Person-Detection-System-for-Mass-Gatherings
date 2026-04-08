@@ -12,6 +12,7 @@ import videoRoutes from './routes/video.routes.js';
 import personRoutes from './routes/person.routes.js';
 import statsRoutes from './routes/stats.routes.js';
 import facematchRoutes from './routes/facematch.routes.js';
+import chatRoutes from './routes/chat.routes.js';
 import errorHandler from './middleware/error.js';
 import initializeSocketIO from './socket.js';
 import logger from './utils/logger.js';
@@ -36,6 +37,7 @@ app.use(helmet());
 const limiter = rateLimit({
   windowMs: 15 * 60 * 1000, // 15 minutes
   max: 100, // limit each IP to 100 requests per windowMs
+  skip: (req) => req.path.startsWith('/api/video/results/'),
   message: 'Too many requests from this IP, please try again later.'
 });
 
@@ -69,6 +71,7 @@ app.use('/api/video', videoRoutes);
 app.use('/api/persons', personRoutes);
 app.use('/api/stats', statsRoutes);
 app.use('/api/facematch', facematchRoutes);
+app.use('/api/chat', chatRoutes);
 
 // Health check
 app.get('/api/health', (req, res) => {

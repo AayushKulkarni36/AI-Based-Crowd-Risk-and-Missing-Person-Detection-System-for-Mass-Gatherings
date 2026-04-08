@@ -71,14 +71,18 @@ const allowedImageMimeTypes = new Set([
   'image/jpg',
   'image/png',
   'image/webp',
-  'image/gif'
+  'image/gif',
+  'application/octet-stream'
 ]);
 
+const allowedImageExtensions = new Set(['.jpg', '.jpeg', '.png', '.webp', '.gif']);
+
 const imageFileFilter = (_req, file, cb) => {
-  if (allowedImageMimeTypes.has(file.mimetype)) {
+  const ext = path.extname(file.originalname).toLowerCase();
+  if (allowedImageMimeTypes.has(file.mimetype) || allowedImageExtensions.has(ext)) {
     cb(null, true);
   } else {
-    cb(new Error(`Invalid image type: ${file.mimetype}. Allowed: JPEG, PNG, WebP`));
+    cb(new Error(`Invalid image type: ${file.mimetype}. Allowed: JPEG, PNG, WebP, GIF`));
   }
 };
 

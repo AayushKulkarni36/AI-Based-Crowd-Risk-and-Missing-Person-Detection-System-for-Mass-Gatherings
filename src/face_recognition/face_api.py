@@ -25,6 +25,7 @@ import io
 import logging
 import os
 from contextlib import asynccontextmanager
+from pathlib import Path
 from typing import Optional
 
 import asyncpg
@@ -51,11 +52,36 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
+def load_env_files() -> None:
+    """
+    Lightweight .env loader so this service works even when started
+    outside the backend directory.
+    """
+    current = Path(__file__).resolve()
+    project_root = current.parents[2]
+    candidates = [project_root / "backend" / ".env", project_root / ".env"]
+
+    for env_path in candidates:
+        if not env_path.exists():
+            continue
+        for raw_line in env_path.read_text(encoding="utf-8").splitlines():
+            line = raw_line.strip()
+            if not line or line.startswith("#") or "=" not in line:
+                continue
+            key, value = line.split("=", 1)
+            key = key.strip()
+            value = value.strip().strip('"').strip("'")
+            if key and key not in os.environ:
+                os.environ[key] = value
+
+
+load_env_files()
+
 DB_HOST = os.getenv("DB_HOST", "localhost")
 DB_PORT = int(os.getenv("DB_PORT", "5432"))
 DB_NAME = os.getenv("DB_NAME", "missing_persons")
 DB_USER = os.getenv("DB_USER", "postgres")
-DB_PASSWORD = os.getenv("DB_PASSWORD", "postgres123")
+DB_PASSWORD = os.getenv("DB_PASSWORD", "")
 
 FACE_MATCH_THRESHOLD = 0.60  # InsightFace buffalo_l recommended
 
@@ -186,7 +212,8 @@ class DatabaseService:
                 password=DB_PASSWORD,
                 min_size=2,
                 max_size=10,
-                command_timeout=60
+                command_timeout=60,
+                max_inactive_connection_lifetime=300
             )
             logger.info("✓ PostgreSQL connection pool initialized")
         except Exception as e:

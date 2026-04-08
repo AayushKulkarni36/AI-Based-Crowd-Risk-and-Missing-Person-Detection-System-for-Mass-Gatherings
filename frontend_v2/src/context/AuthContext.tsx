@@ -26,10 +26,19 @@ const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:5000/api';
 export function AuthProvider({ children }: { children: ReactNode }) {
     const [user, setUser] = useState<AuthUser | null>(null);
     const [isLoading, setIsLoading] = useState(true);
+    const USER_STORAGE_KEY = 'authUser';
 
-    // Validate token on app load
+    // ── Validate token on app load ───────────────────────────────────────
     useEffect(() => {
         const token = localStorage.getItem('authToken');
+        const cachedUser = localStorage.getItem(USER_STORAGE_KEY);
+        if (cachedUser) {
+            try {
+                setUser(JSON.parse(cachedUser));
+            } catch (_) {
+                localStorage.removeItem(USER_STORAGE_KEY);
+            }
+        }
         if (token) {
             validateToken(token);
         } else {
@@ -37,21 +46,66 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         }
     }, []);
 
+    // ── Auto-refresh token every 6 hours ─────────────────────────────────
+    // This prevents sudden logouts when the 8h (prod) token nears expiry.
+    useEffect(() => {
+        const SIX_HOURS = 6 * 60 * 60 * 1000;
+
+        const interval = setInterval(async () => {
+            const token = localStorage.getItem('authToken');
+            if (!token) return; // Not logged in, nothing to refresh
+
+            try {
+                const res = await axios.post(
+                    `${API_URL}/auth/refresh`,
+                    {},
+                    { headers: { Authorization: `Bearer ${token}` } }
+                );
+                const newToken = res.data?.token;
+                if (newToken) {
+                    localStorage.setItem('authToken', newToken);
+                }
+            } catch (err: any) {
+                // Only force-logout if server explicitly rejects the token
+                if (err?.response?.status === 401) {
+                    localStorage.removeItem('authToken');
+                    localStorage.removeItem(USER_STORAGE_KEY);
+                    setUser(null);
+                }
+                // Network errors / server restarts → keep session, retry next cycle
+            }
+        }, SIX_HOURS);
+
+        return () => clearInterval(interval);
+    }, []);
+
     const validateToken = async (token: string) => {
         try {
             const response = await axios.get(`${API_URL}/auth/me`, {
-                headers: { Authorization: `Bearer ${token}` }
+                headers: { Authorization: `Bearer ${token}` },
+                // Short timeout so a slow server on startup doesn't stall the app
+                timeout: 8000
             });
 
             if (response.data && response.data.user) {
                 setUser(response.data.user);
+                localStorage.setItem(USER_STORAGE_KEY, JSON.stringify(response.data.user));
             } else if (response.data) {
-                // User data directly in response
                 setUser(response.data);
+                localStorage.setItem(USER_STORAGE_KEY, JSON.stringify(response.data));
             }
-        } catch (error) {
-            localStorage.removeItem('authToken');
-            setUser(null);
+        } catch (error: any) {
+            const status = error?.response?.status;
+
+            // ONLY clear auth on a genuine "token rejected" response (401/403).
+            // Network errors, server restarts, 5xx, timeouts → keep the session.
+            // The user didn't do anything wrong; connectivity will recover.
+            if (status === 401 || status === 403) {
+                localStorage.removeItem('authToken');
+                localStorage.removeItem(USER_STORAGE_KEY);
+                setUser(null);
+            }
+            // All other errors: silently keep existing cached user from localStorage
         } finally {
             setIsLoading(false);
         }
@@ -78,6 +132,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
             if (userData) {
                 setUser(userData);
+                localStorage.setItem(USER_STORAGE_KEY, JSON.stringify(userData));
                 return { role: userData.role };
             }
 
@@ -116,6 +171,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
             if (userData) {
                 setUser(userData);
+                localStorage.setItem(USER_STORAGE_KEY, JSON.stringify(userData));
             } else {
                 throw new Error('No user data received');
             }
@@ -159,6 +215,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
     const logout = () => {
         localStorage.removeItem('authToken');
+        localStorage.removeItem(USER_STORAGE_KEY);
         setUser(null);
     };
 

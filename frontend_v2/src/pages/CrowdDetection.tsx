@@ -43,6 +43,7 @@ const INITIAL_STATE: VideoState = {
   errorMsg: null,
   filename: null,
 };
+const ANALYSIS_STORAGE_KEY = 'crowdDetectionState';
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -133,21 +134,97 @@ export default function CrowdDetection() {
           }
         }
         if (data.status === 'FAILED') stopPolling();
-      } catch (_) {}
-    }, 3000);
+      } catch (err: any) {
+        // If direct results polling fails transiently, recover using list API.
+        try {
+          const list = await api.listVideos();
+          const found = list.jobs.find((j) => String(j.id) === String(jobId));
+          if (!found) return;
+
+          if (found.status === 'COMPLETED' || found.status === 'FAILED') {
+            const finalData = await api.getVideoResults(jobId);
+            const faceMatches: FaceMatch[] = Array.isArray(finalData.results?.faceMatches)
+              ? (finalData.results!.faceMatches as any[])
+              : [];
+
+            setState(prev => ({
+              ...prev,
+              progress: finalData.progress ?? 100,
+              uiStatus: finalData.status === 'FAILED' ? 'failed' : 'completed',
+              results: finalData.results ?? prev.results,
+              faceMatches: faceMatches.length > 0 ? faceMatches : prev.faceMatches,
+              errorMsg: finalData.error ?? prev.errorMsg,
+            }));
+            stopPolling();
+          }
+        } catch (_) {
+          // Keep polling; avoid breaking UX on intermittent network/backend restarts.
+        }
+      }
+    }, 5000);
   }, [stopPolling]);
+
+  // Restore analysis state after tab switch / refresh
+  useEffect(() => {
+    const raw = localStorage.getItem(ANALYSIS_STORAGE_KEY);
+    let restored = false;
+    if (raw) {
+      try {
+        const saved = JSON.parse(raw) as VideoState;
+        setState(saved);
+        restored = true;
+        if (saved.videoJobId && (saved.uiStatus === 'processing' || saved.uiStatus === 'uploading')) {
+          startPolling(saved.videoJobId);
+        }
+      } catch (_) {
+        localStorage.removeItem(ANALYSIS_STORAGE_KEY);
+      }
+    }
+
+    // Fallback: if local state is absent, re-attach to latest in-progress job from server.
+    if (!restored) {
+      api.listVideos()
+        .then((data) => {
+          const resumeJob = data.jobs.find(
+            (j) => j.status === 'PROCESSING' || j.status === 'UPLOADED' || j.status === 'QUEUED'
+          );
+          if (!resumeJob) return;
+          setState((prev) => ({
+            ...prev,
+            videoJobId: resumeJob.id,
+            uiStatus: 'processing',
+            progress: resumeJob.progress ?? prev.progress,
+            filename: resumeJob.filename ?? prev.filename
+          }));
+          startPolling(resumeJob.id);
+        })
+        .catch(() => {
+          // ignore resume failures
+        });
+    }
+  }, [startPolling]);
+
+  // Persist analysis state so UI survives refresh/navigation
+  useEffect(() => {
+    localStorage.setItem(ANALYSIS_STORAGE_KEY, JSON.stringify(state));
+  }, [state]);
 
   // Socket listeners
   useEffect(() => {
-    const jobKey = () => state.videoJobId ? `video-${state.videoJobId}` : null;
+    const matchJobId = (incomingJobId: string | number) => {
+      if (!state.videoJobId) return false;
+      const current = String(state.videoJobId);
+      const incoming = String(incomingJobId);
+      return incoming === current || incoming === `video-${current}`;
+    };
 
     const handleProgress = (data: { jobId: string; progress: number }) => {
-      if (!jobKey() || data.jobId !== jobKey()) return;
+      if (!matchJobId(data.jobId)) return;
       setState(prev => ({ ...prev, progress: data.progress }));
     };
 
     const handleCompleted = (data: { jobId: string; results: VideoJobStatus['results'] }) => {
-      if (!jobKey() || data.jobId !== jobKey()) return;
+      if (!matchJobId(data.jobId)) return;
       const faceMatches: FaceMatch[] = Array.isArray((data.results as any)?.faceMatches)
         ? (data.results as any).faceMatches
         : [];
@@ -163,7 +240,7 @@ export default function CrowdDetection() {
     };
 
     const handleFailed = (data: { jobId: string; error: string }) => {
-      if (!jobKey() || data.jobId !== jobKey()) return;
+      if (!matchJobId(data.jobId)) return;
       setState(prev => ({ ...prev, uiStatus: 'failed', errorMsg: data.error }));
       stopPolling();
       toast.error(`Analysis failed: ${data.error}`);
@@ -200,6 +277,7 @@ export default function CrowdDetection() {
   const clearFile = () => {
     setFile(null);
     setState(INITIAL_STATE);
+    localStorage.removeItem(ANALYSIS_STORAGE_KEY);
   };
 
   // Upload + process

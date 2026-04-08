@@ -10,7 +10,7 @@ import cv2
 import numpy as np
 import time
 import os
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
@@ -107,7 +107,7 @@ def _fetch_active_person_embeddings(db_conn) -> Tuple[List[int], List[str], np.n
             """
             SELECT id, name, face_vector
             FROM missing_persons
-            WHERE status = 'ACTIVE' AND face_vector IS NOT NULL
+            WHERE status != 'INACTIVE' AND face_vector IS NOT NULL
             """
         )
         rows = cur.fetchall()
@@ -301,9 +301,11 @@ def main():
     parser.add_argument('--video', required=True, help='Video file path')
     parser.add_argument('--json', action='store_true', help='Output JSON')
     parser.add_argument('--skip', type=int, default=3, help='Frame skip interval')
+    parser.add_argument('--face-skip', type=int, default=int(os.getenv('SKIP_FRAMES_FACE', '8')),
+                        help='Run face matching every N processed frames')
     parser.add_argument('--output-dir', type=str, default=None,
                         help='Directory for output video (default: data/results)')
-    parser.add_argument('--face-threshold', type=float, default=float(os.getenv('MISSING_PERSON_THRESHOLD', '0.85')))
+    parser.add_argument('--face-threshold', type=float, default=float(os.getenv('MISSING_PERSON_THRESHOLD', '0.60')))
     parser.add_argument('--face-cooldown', type=int, default=int(os.getenv('MISSING_PERSON_COOLDOWN_SECONDS', '30')))
     parser.add_argument('--enable-missing-person', action='store_true', default=os.getenv('ENABLE_MISSING_PERSON', 'true').lower() == 'true')
     parser.add_argument('--camera-location', type=str, default=os.getenv('CAMERA_LOCATION', 'Main Gate'))
@@ -449,8 +451,9 @@ def main():
             )
             writer.write(annotated_frame)
 
-            # Missing-person identification (per processed frame)
-            if missing_person_enabled and vector_index is not None and mtcnn is not None and resnet is not None and missing_person_db_conn is not None:
+            # Missing-person identification (run less frequently for performance)
+            should_run_face = (frame_num % max(1, args.face_skip) == 0)
+            if should_run_face and missing_person_enabled and vector_index is not None and mtcnn is not None and resnet is not None and missing_person_db_conn is not None:
                 try:
                     detected_faces = _detect_faces_and_embeddings(frame, mtcnn, resnet, device)
                     matched_this_frame: set[int] = set()
@@ -511,7 +514,7 @@ def main():
                             "similarity": round(float(similarity), 4),
                             "frameNumber": frame_num,
                             "imagePath": snapshot_rel,
-                            "timestamp": datetime.utcnow().isoformat() + "Z"
+                            "timestamp": datetime.now(timezone.utc).isoformat()
                         })
                 except Exception as mp_err:
                     print(f'WARN: Missing-person matching failed at frame {frame_num}: {mp_err}', file=sys.stderr, flush=True)
@@ -555,7 +558,7 @@ def main():
             "videoSource": str(video_path),
             "outputVideoPath": output_video_relative,
             "faceMatches": face_matches_output,
-            "timestamp": datetime.utcnow().isoformat() + "Z"
+            "timestamp": datetime.now(timezone.utc).isoformat()
         }
 
         # Output JSON as last line

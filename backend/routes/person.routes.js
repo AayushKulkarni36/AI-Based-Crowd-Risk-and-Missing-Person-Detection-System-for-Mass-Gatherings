@@ -9,10 +9,10 @@ const router = express.Router();
 router.get('/', requireAuth, getAllPersons);
 
 // POST /api/persons — register new person (with optional photo)
-router.post('/', requireAdmin, imageUpload.single('photo'), addPerson);
+router.post('/', requireAuth, imageUpload.single('photo'), addPerson);
 
 // POST /api/persons/register-missing-person — spec alias
-router.post('/register-missing-person', requireAdmin, imageUpload.single('photo'), registerMissingPerson);
+router.post('/register-missing-person', requireAuth, imageUpload.single('photo'), registerMissingPerson);
 
 // PUT /api/persons/:id — update status (e.g. FOUND, ACTIVE)
 router.put('/:id', requireAdmin, updatePerson);

@@ -1,8 +1,12 @@
 import { ReactNode } from 'react';
 import Navbar from './Navbar';
 import { motion } from 'framer-motion';
+import { useAuth } from '../context/AuthContext';
+import ChatBot from './chat/ChatBot';
 
 export default function Layout({ children }: { children: ReactNode }) {
+    const { isAuthenticated } = useAuth();
+
     return (
         <div className="min-h-screen flex flex-col relative overflow-hidden text-white font-sans selection:bg-brand-primary selection:text-white">
             {/* Animated Background Blobs */}
@@ -21,6 +25,7 @@ export default function Layout({ children }: { children: ReactNode }) {
             >
                 {children}
             </motion.main>
+            {isAuthenticated && <ChatBot />}
         </div>
     );
 }
