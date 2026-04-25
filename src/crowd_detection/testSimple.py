@@ -528,6 +528,26 @@ def main():
         cap.release()
         writer.release()
 
+        # Convert to browser-compatible H.264/AAC with faststart for inline streaming
+        try:
+            import subprocess
+            print('INFO: Starting FFMPEG conversion to H.264/AAC for browser streaming...', file=sys.stderr, flush=True)
+            browser_output_path = str(output_path).replace('.mp4', '_browser.mp4')
+            subprocess.run([
+                'ffmpeg', '-y', '-i', str(output_path),
+                '-c:v', 'libx264', '-preset', 'fast', '-crf', '23',
+                '-c:a', 'aac', '-b:a', '128k',
+                '-movflags', '+faststart',
+                browser_output_path
+            ], check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            
+            # Replace the original with the browser-compatible one
+            os.remove(str(output_path))
+            os.rename(browser_output_path, str(output_path))
+            print('INFO: FFMPEG conversion successful', file=sys.stderr, flush=True)
+        except Exception as e:
+            print(f'WARN: FFMPEG conversion failed, fallback to OpenCV original: {e}', file=sys.stderr, flush=True)
+
         # Ensure we have data
         if not counts:
             counts = [0]

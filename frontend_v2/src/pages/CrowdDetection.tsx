@@ -94,6 +94,7 @@ export default function CrowdDetection() {
   const [dragActive, setDragActive] = useState(false);
   const [state, setState] = useState<VideoState>(INITIAL_STATE);
   const pollTimer = useRef<number | null>(null);
+  const videoRef = useRef<HTMLVideoElement | null>(null);
 
   const stopPolling = useCallback(() => {
     if (pollTimer.current) {
@@ -237,6 +238,10 @@ export default function CrowdDetection() {
       }));
       stopPolling();
       toast.success('Analysis complete!');
+      if (videoRef.current && data.results?.video_url) {
+        videoRef.current.src = data.results.video_url;
+        videoRef.current.load();
+      }
     };
 
     const handleFailed = (data: { jobId: string; error: string }) => {
@@ -314,9 +319,8 @@ export default function CrowdDetection() {
   const safetyRisk = riskLevel === 'CRITICAL' || riskLevel === 'RISKY' ? 'high'
     : riskLevel === 'MODERATE' ? 'medium' : 'low';
 
-  const outputVideoUrl = state.results?.outputVideoPath
-    ? `http://localhost:5000/${state.results.outputVideoPath}`
-    : null;
+  const outputVideoUrl = state.results?.video_url 
+    || (state.results?.outputVideoPath ? `http://localhost:5000/${state.results.outputVideoPath}` : null);
 
   return (
     <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
@@ -513,10 +517,11 @@ export default function CrowdDetection() {
             {/* Annotated video */}
             {isCompleted && outputVideoUrl ? (
               <video
+                ref={videoRef}
                 key={outputVideoUrl}
                 src={outputVideoUrl}
                 controls
-                autoPlay={false}
+                autoPlay={true}
                 className="w-full h-full object-contain"
                 onError={() => toast.error('Video failed to load. Try downloading instead.')}
               />

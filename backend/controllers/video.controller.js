@@ -176,6 +176,11 @@ async function _runPython(videoId, filePath) {
     const outputVideoPath = results.outputVideoPath || null;
     const riskLevel = results.riskLevel || _classifyRisk(totalPeople);
 
+    if (outputVideoPath) {
+      const filename = outputVideoPath.split('/').pop();
+      results.video_url = `http://localhost:5173/video/${filename}`;
+    }
+
     cacheSet(videoId, {
       status: 'COMPLETED',
       progress: 100,
@@ -301,6 +306,11 @@ export async function getResults(req, res, next) {
           const r = dbRow.rows[0];
           const parsedResults = r.results_json ? JSON.parse(r.results_json) : null;
 
+          if (parsedResults && parsedResults.outputVideoPath) {
+            const filename = parsedResults.outputVideoPath.split('/').pop();
+            parsedResults.video_url = `http://localhost:5173/video/${filename}`;
+          }
+
           // Sync cache
           cacheSet(videoId, {
             status: r.status,
@@ -342,6 +352,11 @@ export async function getResults(req, res, next) {
         status: job.status,
         error: job.error,
       });
+    }
+
+    if (job.results && job.results.outputVideoPath && !job.results.video_url) {
+      const filename = job.results.outputVideoPath.split('/').pop();
+      job.results.video_url = `http://localhost:5173/video/${filename}`;
     }
 
     return res.json({
