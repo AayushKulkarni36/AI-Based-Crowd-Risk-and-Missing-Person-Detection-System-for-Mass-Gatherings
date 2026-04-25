@@ -19,7 +19,7 @@ const logger = winston.createLogger({
     winston.format.metadata(),
     winston.format.json()
   ),
-  defaultMeta: { service: 'crowdsafe-backend' },
+  defaultMeta: { service: 'crowdnexis_ai-backend' },
   transports: [
     // Console output
     new winston.transports.Console({

@@ -1,4 +1,4 @@
-# CrowdSafe Face Matching Pipeline - IMPLEMENTATION SUMMARY
+# CrowdNexis AI Face Matching Pipeline - IMPLEMENTATION SUMMARY
 **Date:** 2026-04-04
 **Status:** 90% Complete (Ready for Integration Testing)
 

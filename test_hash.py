@@ -17,7 +17,7 @@ conn = psycopg2.connect(
     password="postgres123"
 )
 cursor = conn.cursor()
-cursor.execute("SELECT password_hash FROM users WHERE email = 'admin@crowdsafe.com'")
+cursor.execute("SELECT password_hash FROM users WHERE email = 'admin@crowdnexis.ai'")
 row = cursor.fetchone()
 if row:
     db_hash = row[0]

@@ -43,7 +43,7 @@ export function LoginPage() {
                 <Shield size={32} className="text-white" />
               </div>
             </div>
-            <h1 className="text-3xl font-bold text-white mb-2">CrowdSafe</h1>
+            <h1 className="text-3xl font-bold text-white mb-2">CrowdNexis AI</h1>
             <p className="text-slate-400">Sign in to your account</p>
           </div>
 

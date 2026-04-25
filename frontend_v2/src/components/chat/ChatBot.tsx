@@ -71,10 +71,10 @@ export default function ChatBot() {
     id: 'welcome',
     role: 'bot' as const,
     text: language === 'hi'
-      ? 'नमस्ते! मैं CrowdSafe AI हूं। भीड़, लापता व्यक्तियों, या अलर्ट के बारे में पूछें।'
+      ? 'नमस्ते! मैं CrowdNexis AI हूं। भीड़, लापता व्यक्तियों, या अलर्ट के बारे में पूछें।'
       : language === 'mr'
-      ? 'नमस्कार! मी CrowdSafe AI आहे. गर्दी, हरवलेले व्यक्ती, किंवा इशाऱ्यांबद्दल विचारा.'
-      : 'Hello! I\'m CrowdSafe AI. Ask me about crowd status, missing persons, or alerts. Type "help" for all commands.',
+      ? 'नमस्कार! मी CrowdNexis AI आहे. गर्दी, हरवलेले व्यक्ती, किंवा इशाऱ्यांबद्दल विचारा.'
+      : 'Hello! I\'m CrowdNexis AI. Ask me about crowd status, missing persons, or alerts. Type "help" for all commands.',
     timestamp: new Date()
   }), [language]);
 
@@ -186,7 +186,7 @@ export default function ChatBot() {
                 <div className="w-8 h-8 rounded-full bg-gradient-to-r from-blue-500 to-cyan-500 flex items-center justify-center text-white text-sm">
                   AI
                 </div>
-                <div className="text-sm font-semibold text-white">CrowdSafe AI</div>
+                <div className="text-sm font-semibold text-white">CrowdNexis AI</div>
               </div>
               <div className="flex items-center gap-2">
                 <button

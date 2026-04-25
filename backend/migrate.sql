@@ -1,5 +1,5 @@
 -- ============================================================================
--- CrowdSafe Database Migration
+-- CrowdNexis AI Database Migration
 -- Creates all tables for the crowd risk detection system
 -- ============================================================================
 

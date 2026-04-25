@@ -1,13 +1,13 @@
 -- ============================================================================
--- CrowdSafe Database Seed Data
+-- CrowdNexis AI Database Seed Data
 -- ============================================================================
 
 -- Admin user (password: admin@123)
 -- bcrypt hash for 'admin@123' with 10 rounds
 INSERT INTO users (email, password_hash, full_name, role, is_active)
 VALUES (
-    'admin@crowdsafe.com',
-    '$2b$10$YRqHIkLDerK19KSgz6zQGOmESnXrNx4VZSokhrmVgBSGE9bNIIkGy',
+    'admin@crowdnexis.ai',
+    '$2b$10$qwOQzZPK3FnYK/VRKhFJMuFTgDim69OfrWEIKr9W6hjGVjy/KXr6y',
     'Admin User',
     'ADMIN',
     true

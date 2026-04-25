@@ -160,7 +160,7 @@ const translations: Record<Language, Record<string, string>> = {
 
 const TranslationContext = createContext<TranslationContextType | undefined>(undefined);
 
-const LANG_STORAGE_KEY = 'crowdsafe_language';
+const LANG_STORAGE_KEY = 'crowdnexis_ai_language';
 
 function getInitialLanguage(): Language {
   try {

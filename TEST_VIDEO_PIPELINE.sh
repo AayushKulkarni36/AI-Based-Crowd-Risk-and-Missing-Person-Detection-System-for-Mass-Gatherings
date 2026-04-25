@@ -2,7 +2,7 @@
 set -e
 
 echo "=================================="
-echo "CrowdSafe Video Pipeline Test Suite"
+echo "CrowdNexis AI Video Pipeline Test Suite"
 echo "=================================="
 echo ""
 

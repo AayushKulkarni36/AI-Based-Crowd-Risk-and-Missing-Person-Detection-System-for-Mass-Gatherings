@@ -361,7 +361,7 @@ db_service = DatabaseService()
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Initialize on startup, cleanup on shutdown"""
-    logger.info("🚀 Starting CrowdSafe Face API...")
+    logger.info("🚀 Starting CrowdNexis AI Face API...")
     await face_service.initialize()
     await db_service.initialize()
 
@@ -376,7 +376,7 @@ async def lifespan(app: FastAPI):
 # ============================================================================
 
 app = FastAPI(
-    title="CrowdSafe Face Recognition API",
+    title="CrowdNexis AI Face Recognition API",
     version="1.0.0",
     description="Face enrollment and similarity search service",
     lifespan=lifespan

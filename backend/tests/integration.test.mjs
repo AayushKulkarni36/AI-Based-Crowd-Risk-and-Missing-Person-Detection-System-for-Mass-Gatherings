@@ -23,7 +23,7 @@ describe('Auth API', () => {
     const res = await fetch(`${API_BASE}/auth/login`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ email: 'admin@crowdsafe.com', password: 'admin@123' }),
+      body: JSON.stringify({ email: 'admin@crowdnexis.ai', password: 'admin@123' }),
     });
     expect(res.status).toBe(200);
     const data = await res.json();
@@ -37,7 +37,7 @@ describe('Auth API', () => {
     });
     expect(res.status).toBe(200);
     const data = await res.json();
-    expect(data).toHaveProperty('email', 'admin@crowdsafe.com');
+    expect(data).toHaveProperty('email', 'admin@crowdnexis.ai');
     expect(data).toHaveProperty('role', 'ADMIN');
   });
 

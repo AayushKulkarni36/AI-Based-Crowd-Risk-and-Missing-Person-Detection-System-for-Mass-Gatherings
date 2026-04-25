@@ -5,11 +5,11 @@ services:
   # DATABASE: PostgreSQL 15 with pgvector extension
   # =========================================================================
   db:
-    image: pgvector/pgvector:pg15-latest
-    container_name: crowdsafe-db
+    image: pgvector/pgvector:pg15
+    container_name: crowdnexis_ai-db
     environment:
       POSTGRES_USER: postgres
-      POSTGRES_PASSWORD: postgres123
+      POSTGRES_PASSWORD: root
       POSTGRES_DB: missing_persons
     ports:
       - "5432:5432"
@@ -23,7 +23,7 @@ services:
       timeout: 5s
       retries: 5
     networks:
-      - crowdsafe-network
+      - crowdnexis_ai-network
     restart: unless-stopped
 
   # =========================================================================
@@ -31,7 +31,7 @@ services:
   # =========================================================================
   redis:
     image: redis:7-alpine
-    container_name: crowdsafe-redis
+    container_name: crowdnexis_ai-redis
     command: redis-server --appendonly yes
     ports:
       - "6379:6379"
@@ -43,7 +43,7 @@ services:
       timeout: 5s
       retries: 5
     networks:
-      - crowdsafe-network
+      - crowdnexis_ai-network
     restart: unless-stopped
 
   # =========================================================================
@@ -53,7 +53,7 @@ services:
     build:
       context: .
       dockerfile: infra/docker/Dockerfile.backend
-    container_name: crowdsafe-backend
+    container_name: crowdnexis_ai-backend
     environment:
       NODE_ENV: production
       PORT: 5000
@@ -84,7 +84,7 @@ services:
       - ./data/results:/app/data/results
       - ./data/logs:/app/data/logs
     networks:
-      - crowdsafe-network
+      - crowdnexis_ai-network
     restart: unless-stopped
 
   # =========================================================================
@@ -94,7 +94,7 @@ services:
     build:
       context: .
       dockerfile: infra/docker/Dockerfile.python
-    container_name: crowdsafe-face-api
+    container_name: crowdnexis_ai-face-api
     environment:
       DB_HOST: db
       DB_PORT: 5432
@@ -115,7 +115,7 @@ services:
       - ./data/uploads:/app/data/uploads
       - ./data/results:/app/data/results
     networks:
-      - crowdsafe-network
+      - crowdnexis_ai-network
     restart: unless-stopped
     # GPU support (uncomment if running on NVIDIA GPU)
     # deploy:
@@ -133,7 +133,7 @@ services:
     build:
       context: ./frontend_v2
       dockerfile: ../infra/docker/Dockerfile.frontend
-    container_name: crowdsafe-frontend
+    container_name: crowdnexis_ai-frontend
     environment:
       VITE_API_URL: http://localhost:5000/api
       VITE_SOCKET_URL: http://localhost:5000
@@ -150,14 +150,14 @@ services:
       - ./frontend_v2/src:/app/src
       - ./frontend_v2/public:/app/public
     networks:
-      - crowdsafe-network
+      - crowdnexis_ai-network
     restart: unless-stopped
   # =========================================================================
   # NGINX: Reverse proxy (optional - use in production)
   # =========================================================================
   # nginx:
   #   image: nginx:alpine
-  #   container_name: crowdsafe-nginx
+  #   container_name: crowdnexis_ai-nginx
   #   ports:
   #     - "80:80"
   #     - "443:443"
@@ -167,7 +167,7 @@ services:
   #     - backend
   #     - frontend
   #   networks:
-  #     - crowdsafe-network
+  #     - crowdnexis_ai-network
 
   # ============================================================================
   # VOLUMES
@@ -182,5 +182,5 @@ volumes:
 # NETWORKS
 # ============================================================================
 networks:
-  crowdsafe-network:
+  crowdnexis_ai-network:
     driver: bridge

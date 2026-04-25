@@ -15,11 +15,7 @@ interface ChartData { time: string; value: number; }
 const container = { hidden: { opacity: 0 }, show: { opacity: 1, transition: { staggerChildren: 0.1 } } };
 const item = { hidden: { y: 20, opacity: 0 }, show: { y: 0, opacity: 1 } };
 
-const CHART_PLACEHOLDER: ChartData[] = [
-  { time: '00:00', value: 0 }, { time: '04:00', value: 0 },
-  { time: '08:00', value: 0 }, { time: '12:00', value: 0 },
-  { time: '16:00', value: 0 }, { time: '20:00', value: 0 },
-];
+const CHART_PLACEHOLDER: ChartData[] = [];
 
 function StatSkeleton() {
   return (
@@ -94,20 +90,28 @@ export default function Dashboard() {
 
   const fetchDetectionsChart = useCallback(async () => {
     try {
-      const data = await api.getDetectionsToday();
+      const data = await api.getDetectionsAllTime();
+      console.log('[Dashboard] Raw API response:', JSON.stringify(data));
+
       const points = data.points || [];
-      if (points.length === 0) {
-        setChartData(CHART_PLACEHOLDER);
+      if (!points || points.length === 0) {
+        console.log('[Dashboard] No detection data from API — chart will show empty state');
+        setChartData([]);
         return;
       }
-      setChartData(
-        points.map((p: DetectionPoint) => ({
-          time: p.time,
-          value: Number(p.value || 0)
-        }))
-      );
-    } catch (_) {
-      // non-blocking
+      
+      const formattedPoints = points.map((p: DetectionPoint) => {
+        const val = Number(p.value);
+        return {
+          time: p.time || 'Unknown',
+          value: isNaN(val) ? 0 : val
+        };
+      });
+
+      console.log('[Dashboard] Formatted chart data:', JSON.stringify(formattedPoints));
+      setChartData(formattedPoints);
+    } catch (err) {
+      console.error('[Dashboard] Failed to fetch detections chart data:', err);
     }
   }, []);
 
@@ -123,7 +127,7 @@ export default function Dashboard() {
       fetchStats();
       fetchAlerts();
       fetchDetectionsChart();
-    }, 10000);
+    }, 30000);
     return () => clearInterval(interval);
   }, [fetchStats, fetchAlerts, fetchDetectionsChart]);
 
@@ -186,16 +190,34 @@ export default function Dashboard() {
         </Card>
 
         <Card>
-          <h3 className="text-xl font-bold text-white mb-6">Detections Today</h3>
-          <ResponsiveContainer width="100%" height={200}>
-            <LineChart data={chartData}>
-              <CartesianGrid strokeDasharray="3 3" stroke="#334155" />
-              <XAxis dataKey="time" stroke="#cbd5e1" />
-              <YAxis stroke="#cbd5e1" />
-              <Tooltip contentStyle={{ backgroundColor: '#1e293b', border: '1px solid #475569', borderRadius: '8px', color: '#fff' }} />
-              <Line type="monotone" dataKey="value" stroke="#38bdf8" strokeWidth={2} dot={{ fill: '#38bdf8', r: 4 }} />
-            </LineChart>
-          </ResponsiveContainer>
+          <h3 className="text-xl font-bold text-white mb-6">All-Time Detections</h3>
+          {chartData.length === 0 ? (
+            <div className="flex items-center justify-center h-[200px]">
+              <div className="text-center">
+                <Activity className="w-10 h-10 text-slate-600 mx-auto mb-3 opacity-50" />
+                <p className="text-slate-500 text-sm">No detection data yet. Process a video to see trends.</p>
+              </div>
+            </div>
+          ) : (
+            <ResponsiveContainer width="100%" height={200}>
+              <LineChart data={chartData} margin={{ top: 10, right: 20, left: 0, bottom: 10 }}>
+                <CartesianGrid strokeDasharray="3 3" stroke="#334155" vertical={false} />
+                <XAxis dataKey="time" stroke="#cbd5e1" tickMargin={10} />
+                <YAxis stroke="#cbd5e1" allowDecimals={false} domain={[0, 'dataMax + 5']} />
+                <Tooltip contentStyle={{ backgroundColor: '#1e293b', border: '1px solid #475569', borderRadius: '8px', color: '#fff' }} />
+                <Line 
+                  isAnimationActive={false}
+                  type="monotone" 
+                  dataKey="value" 
+                  stroke="#38bdf8" 
+                  strokeWidth={3} 
+                  dot={{ fill: '#38bdf8', r: 5, strokeWidth: 2, stroke: '#0f172a' }} 
+                  activeDot={{ r: 8, stroke: '#fff', strokeWidth: 2 }}
+                  connectNulls={true}
+                />
+              </LineChart>
+            </ResponsiveContainer>
+          )}
         </Card>
       </motion.div>
 

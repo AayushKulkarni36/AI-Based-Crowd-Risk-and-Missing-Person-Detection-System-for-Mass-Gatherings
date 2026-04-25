@@ -2,7 +2,7 @@
 setlocal enabledelayedexpansion
 
 REM ============================================================================
-REM CrowdSafe - One-command startup (Windows)
+REM CrowdNexis AI - One-command startup (Windows)
 REM - Starts Docker (Postgres + Redis)
 REM - Ensures DB + migrations exist
 REM - Creates venv + installs python deps if missing
@@ -17,7 +17,7 @@ set "PROJECT_ROOT=%~dp0"
 cd /d "%PROJECT_ROOT%"
 
 echo ========================================
-echo   CrowdSafe - One Command Startup
+echo   CrowdNexis AI - One Command Startup
 echo ========================================
 echo Project: %PROJECT_ROOT%
 echo.
@@ -62,8 +62,8 @@ set "REDIS_CONTAINER="
 
 for /f "usebackq delims=" %%c in (`docker ps -a --format "{{.Names}}"`) do (
   if /i "%%c"=="healthcare_db" set "PG_CONTAINER=healthcare_db"
-  if /i "%%c"=="crowdsafe-db" set "PG_CONTAINER=crowdsafe-db"
-  if /i "%%c"=="crowdsafe-redis" set "REDIS_CONTAINER=crowdsafe-redis"
+  if /i "%%c"=="crowdnexis_ai-db" set "PG_CONTAINER=crowdnexis_ai-db"
+  if /i "%%c"=="crowdnexis_ai-redis" set "REDIS_CONTAINER=crowdnexis_ai-redis"
   if /i "%%c"=="redis" set "REDIS_CONTAINER=redis"
 )
 
@@ -76,8 +76,8 @@ if not defined PG_CONTAINER (
     pause
     exit /b 1
   )
-  set "PG_CONTAINER=crowdsafe-db"
-  set "REDIS_CONTAINER=crowdsafe-redis"
+  set "PG_CONTAINER=crowdnexis_ai-db"
+  set "REDIS_CONTAINER=crowdnexis_ai-redis"
 ) else (
   echo [INFO] Starting Postgres container: %PG_CONTAINER%
   docker start %PG_CONTAINER% >nul 2>&1
@@ -184,11 +184,11 @@ for /f "tokens=5" %%p in ('netstat -ano ^| findstr :5173 ^| findstr LISTENING') 
   taskkill /PID %%p /F >nul 2>&1
 )
 
-start "CrowdSafe - Backend (Node)" /D "%PROJECT_ROOT%backend" cmd /k npm start
+start "CrowdNexis AI - Backend (Node)" /D "%PROJECT_ROOT%backend" cmd /k npm start
 
 timeout /t 2 /nobreak >nul
 
-start "CrowdSafe - Frontend (Vite)" /D "%PROJECT_ROOT%frontend_v2" cmd /k npm run dev
+start "CrowdNexis AI - Frontend (Vite)" /D "%PROJECT_ROOT%frontend_v2" cmd /k npm run dev
 
 echo.
 echo ========================================

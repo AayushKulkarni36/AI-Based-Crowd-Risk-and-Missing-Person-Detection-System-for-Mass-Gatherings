@@ -148,8 +148,8 @@ export const api = {
     return await res.json();
   },
 
-  getDetectionsToday: async (): Promise<{ success: boolean; points: DetectionPoint[] }> => {
-    const res = await fetch(`${API_BASE}/stats/detections-today`, { headers: authHeader() });
+  getDetectionsAllTime: async (): Promise<{ success: boolean; points: DetectionPoint[] }> => {
+    const res = await fetch(`${API_BASE}/stats/detections-all-time`, { headers: authHeader() });
     if (!res.ok) throw new Error('Failed to fetch detections timeline');
     return await res.json();
   },

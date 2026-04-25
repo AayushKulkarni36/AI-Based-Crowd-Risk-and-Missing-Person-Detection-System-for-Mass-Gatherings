@@ -12,13 +12,32 @@ import { videoQueue } from './queues/video.queue.js';
  *  - face:match      { jobId, personId, name, confidence, frameNumber, timestamp }
  */
 
+// ── Helper: safely fetch queue stats without crashing on Redis errors ──────
+async function safeGetQueueStats() {
+  try {
+    const counts = await videoQueue.getJobCounts();
+    return {
+      queued: counts.waiting || 0,
+      processing: counts.active || 0,
+      completed: counts.completed || 0,
+      failed: counts.failed || 0,
+    };
+  } catch (err) {
+    console.warn('⚠️ Could not fetch queue stats (Redis may be down):', err.message);
+    return { queued: 0, processing: 0, completed: 0, failed: 0 };
+  }
+}
+
 export function initializeSocketIO(httpServer) {
   const io = new SocketServer(httpServer, {
     cors: {
       origin: process.env.FRONTEND_URL || 'http://localhost:5173',
       methods: ['GET', 'POST'],
       credentials: true
-    }
+    },
+    // ── Socket.io server-side tuning ─────────────────────────────────────
+    pingTimeout: 60000,     // wait 60s before declaring a client dead
+    pingInterval: 25000,    // send a ping every 25s to keep connection alive
   });
 
   const eventNamespace = io.of('/events');
@@ -30,14 +49,9 @@ export function initializeSocketIO(httpServer) {
   eventNamespace.on('connection', (socket) => {
     console.log(`✓ Socket.io client connected: ${socket.id}`);
 
-    // Send current queue stats to new client
-    videoQueue.getJobCounts().then((counts) => {
-      socket.emit('queue:stats', {
-        queued: counts.waiting || 0,
-        processing: counts.active || 0,
-        completed: counts.completed || 0,
-        failed: counts.failed || 0
-      });
+    // Send current queue stats to new client (non-blocking)
+    safeGetQueueStats().then((stats) => {
+      socket.emit('queue:stats', stats);
     });
 
     socket.on('disconnect', () => {
@@ -60,14 +74,9 @@ export function initializeSocketIO(httpServer) {
       timestamp: new Date().toISOString()
     });
 
-    // Also update queue stats
-    videoQueue.getJobCounts().then((counts) => {
-      eventNamespace.emit('queue:stats', {
-        queued: counts.waiting || 0,
-        processing: counts.active || 0,
-        completed: counts.completed || 0,
-        failed: counts.failed || 0
-      });
+    // Also update queue stats (non-blocking)
+    safeGetQueueStats().then((stats) => {
+      eventNamespace.emit('queue:stats', stats);
     });
   });
 
@@ -111,14 +120,9 @@ export function initializeSocketIO(httpServer) {
       }
     }
 
-    // Update queue stats
-    videoQueue.getJobCounts().then((counts) => {
-      eventNamespace.emit('queue:stats', {
-        queued: counts.waiting || 0,
-        processing: counts.active || 0,
-        completed: counts.completed || 0,
-        failed: counts.failed || 0
-      });
+    // Update queue stats (non-blocking)
+    safeGetQueueStats().then((stats) => {
+      eventNamespace.emit('queue:stats', stats);
     });
   });
 
@@ -129,14 +133,9 @@ export function initializeSocketIO(httpServer) {
       timestamp: new Date().toISOString()
     });
 
-    // Update queue stats
-    videoQueue.getJobCounts().then((counts) => {
-      eventNamespace.emit('queue:stats', {
-        queued: counts.waiting || 0,
-        processing: counts.active || 0,
-        completed: counts.completed || 0,
-        failed: counts.failed || 0
-      });
+    // Update queue stats (non-blocking)
+    safeGetQueueStats().then((stats) => {
+      eventNamespace.emit('queue:stats', stats);
     });
   });
 

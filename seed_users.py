@@ -28,21 +28,21 @@ conn.commit()
 password_hash = bcrypt.hashpw(b'admin@123', bcrypt.gensalt(12)).decode('utf-8')
 
 # Delete any existing admin user
-cursor.execute("DELETE FROM users WHERE email = 'admin@crowdsafe.com';")
+cursor.execute("DELETE FROM users WHERE email = 'admin@crowdnexis.ai';")
 
 # Insert new admin user
 cursor.execute("""
     INSERT INTO users (email, password_hash, full_name, role, is_active, created_at)
     VALUES (%s, %s, %s, 'ADMIN', true, NOW())
-""", ('admin@crowdsafe.com', password_hash, 'System Administrator'))
+""", ('admin@crowdnexis.ai', password_hash, 'System Administrator'))
 
 # Also seed an operator user for testing
 operator_hash = bcrypt.hashpw(b'operator@123', bcrypt.gensalt(12)).decode('utf-8')
-cursor.execute("DELETE FROM users WHERE email = 'operator@crowdsafe.com';")
+cursor.execute("DELETE FROM users WHERE email = 'operator@crowdnexis.ai';")
 cursor.execute("""
     INSERT INTO users (email, password_hash, full_name, role, is_active, created_at)
     VALUES (%s, %s, %s, 'OPERATOR', true, NOW())
-""", ('operator@crowdsafe.com', operator_hash, 'Test Operator'))
+""", ('operator@crowdnexis.ai', operator_hash, 'Test Operator'))
 
 conn.commit()
 
@@ -56,10 +56,10 @@ for email, role, full_name in users:
 
 print("\n[LOGIN CREDENTIALS]\n")
 print("  Admin Account:")
-print("    Email:    admin@crowdsafe.com")
+print("    Email:    admin@crowdnexis.ai")
 print("    Password: admin@123")
 print("\n  Operator Account:")
-print("    Email:    operator@crowdsafe.com")
+print("    Email:    operator@crowdnexis.ai")
 print("    Password: operator@123\n")
 
 cursor.close()

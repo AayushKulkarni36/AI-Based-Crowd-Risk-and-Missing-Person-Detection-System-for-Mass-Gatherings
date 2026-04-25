@@ -21,7 +21,7 @@ sympy==1.14.0
 typing-extensions==4.15.0
 
 # Face Recognition (NEW)
-insightface==0.7.3
+#insightface==0.7.3
 onnxruntime==1.19.2
 
 # Vector Search (NEW)

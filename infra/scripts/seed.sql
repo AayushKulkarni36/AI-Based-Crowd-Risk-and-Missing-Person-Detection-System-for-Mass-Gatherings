@@ -1,5 +1,5 @@
 -- ============================================================================
--- Seed Data for CrowdSafe Demo
+-- Seed Data for CrowdNexis AI Demo
 -- ============================================================================
 -- This file populates initial demo data for testing and demonstration.
 -- Run after migrate.sql: psql -U postgres -d missing_persons -f infra/scripts/seed.sql
@@ -44,7 +44,7 @@ SELECT
   NOW() - INTERVAL '2 days',
   NOW() - INTERVAL '2 days' + INTERVAL '1 minute',
   NOW() - INTERVAL '2 days' + INTERVAL '2 minutes'
-FROM users WHERE email = 'operator@crowdsafe.local'
+FROM users WHERE email = 'operator@crowdnexis.local'
 ON CONFLICT DO NOTHING;
 
 INSERT INTO video_jobs (
@@ -59,7 +59,7 @@ SELECT
   users.id,
   NOW() - INTERVAL '1 hour',
   NOW() - INTERVAL '45 minutes'
-FROM users WHERE email = 'operator@crowdsafe.local'
+FROM users WHERE email = 'operator@crowdnexis.local'
 ON CONFLICT DO NOTHING;
 
 -- ============================================================================

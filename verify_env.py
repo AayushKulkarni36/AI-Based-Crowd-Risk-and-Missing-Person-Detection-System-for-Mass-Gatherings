@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Environment verification script for CrowdSafe Python dependencies
+Environment verification script for CrowdNexis AI Python dependencies
 Run this before starting video processing to check system readiness
 """
 
@@ -42,7 +42,7 @@ def check_dependencies():
 
     # Print results
     print("\n" + "="*60)
-    print("CROWDSAFE ENVIRONMENT VERIFICATION")
+    print("CROWDNEXIS_AI ENVIRONMENT VERIFICATION")
     print("="*60)
 
     for name, ok, info in checks:

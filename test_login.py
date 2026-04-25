@@ -3,7 +3,7 @@ import json
 
 url = "http://localhost:5000/api/auth/login"
 payload = {
-    "email": "admin@crowdsafe.com",
+    "email": "admin@crowdnexis.ai",
     "password": "admin@123"
 }
 

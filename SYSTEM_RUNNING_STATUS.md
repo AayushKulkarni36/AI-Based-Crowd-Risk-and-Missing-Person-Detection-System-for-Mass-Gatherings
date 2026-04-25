@@ -1,4 +1,4 @@
-# 🚀 CROWDSAFE PROJECT - RUNNING & FULLY OPERATIONAL
+# 🚀 CROWDNEXIS_AI PROJECT - RUNNING & FULLY OPERATIONAL
 
 **Status:** ✅ ALL SYSTEMS OPERATIONAL
 **Date:** 2026-04-05
@@ -31,7 +31,7 @@ Response: {"status":"OK","message":"Backend running","timestamp":"..."}
 ```
 ✅ Status: PASS
 Endpoint: POST /api/auth/login
-Credentials: admin@crowdsafe.com / admin@123
+Credentials: admin@crowdnexis.ai / admin@123
 Response: JWT token issued successfully + user object
 Token: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9... (valid, not expired)
 ```
@@ -42,7 +42,7 @@ Token: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9... (valid, not expired)
 Endpoint: GET /api/auth/me
 Auth: Bearer token required
 Response: Successfully returns authenticated user data
-User: Admin (id: 15, email: admin@crowdsafe.com, role: ADMIN)
+User: Admin (id: 15, email: admin@crowdnexis.ai, role: ADMIN)
 ```
 
 ### 4. Missing Persons API
@@ -276,7 +276,7 @@ Database Queries: Using cosine similarity search (native SQL)
 
 ## 🎉 SUMMARY
 
-**The CrowdSafe system is fully operational and ready for production use!**
+**The CrowdNexis AI system is fully operational and ready for production use!**
 
 ### What's Working:
 - ✅ All 30 missing persons in database
@@ -307,7 +307,7 @@ Database Queries: Using cosine similarity search (native SQL)
 
 **Frontend UI:**
 - Local: http://localhost:5173
-- Credentials: admin@crowdsafe.com / admin@123
+- Credentials: admin@crowdnexis.ai / admin@123
 
 **Backend API:**
 - Health: GET http://localhost:5000/api/health

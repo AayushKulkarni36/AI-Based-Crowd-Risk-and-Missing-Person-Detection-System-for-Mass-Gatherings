@@ -17,12 +17,15 @@ const pool = new Pool({
   database: process.env.DB_NAME,
   user: process.env.DB_USER,
   password: process.env.DB_PASSWORD,
+  // ── Connection pool tuning ──────────────────────────────────────────────
   max: Number(process.env.DB_POOL_MAX || 10),
-  idleTimeoutMillis: Number(process.env.DB_IDLE_TIMEOUT_MS || 30000),
+  min: 2,                                          // keep 2 warm connections always
+  idleTimeoutMillis: 0,                             // NEVER kill idle clients (prevents the 2-min drop)
   connectionTimeoutMillis: Number(process.env.DB_CONNECT_TIMEOUT_MS || 10000),
+  allowExitOnIdle: false,                           // don't let pool shut down when idle
+  // ── TCP Keep-alive ──────────────────────────────────────────────────────
   keepAlive: true,
-  keepAliveInitialDelayMillis: Number(process.env.DB_KEEPALIVE_DELAY_MS || 10000),
-  maxUses: Number(process.env.DB_MAX_USES || 7500)
+  keepAliveInitialDelayMillis: 30000,               // 30s before first TCP keep-alive probe
 });
 
 // Silent per-connection handler (pool reuses connections; the 'connect'
@@ -56,10 +59,21 @@ pool.query = async function resilientQuery(text, params) {
     if (!isTransient) throw err;
 
     console.warn(`⚠️ PostgreSQL transient error (${code || 'unknown'}), retrying query once...`);
-    await new Promise((resolve) => setTimeout(resolve, 200));
+    await new Promise((resolve) => setTimeout(resolve, 500));
     return originalQuery(text, params);
   }
 };
+
+// ── Periodic health probe ──────────────────────────────────────────────────
+// Runs every 45 seconds to keep at least one connection alive and detect
+// problems early, before a real request arrives and fails.
+setInterval(async () => {
+  try {
+    await pool.query('SELECT 1');
+  } catch (err) {
+    console.error('❌ PostgreSQL health probe failed:', err.message);
+  }
+}, 45_000);
 
 // Single startup probe — logs ONCE when the module first loads.
 pool.query('SELECT 1')

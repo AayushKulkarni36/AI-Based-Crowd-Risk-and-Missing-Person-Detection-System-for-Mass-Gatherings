@@ -198,12 +198,12 @@ CREATE TABLE IF NOT EXISTS notification_preferences (
 -- Seed admin user (password: admin123 hashed with bcrypt)
 -- Hash generated locally (do NOT use in production — change immediately)
 INSERT INTO users (email, password_hash, name, role)
-VALUES ('admin@crowdsafe.local', '$2b$10$DXmeUzzzzzzzzzzzzzzzzzzzzzzzzzz', 'Admin User', 'ADMIN')
+VALUES ('admin@crowdnexis.local', '$2b$10$DXmeUzzzzzzzzzzzzzzzzzzzzzzzzzz', 'Admin User', 'ADMIN')
 ON CONFLICT (email) DO NOTHING;
 
 -- Seed operator user
 INSERT INTO users (email, password_hash, name, role)
-VALUES ('operator@crowdsafe.local', '$2b$10$OXmeUzzzzzzzzzzzzzzzzzzzzzzzzzz', 'Operator User', 'OPERATOR')
+VALUES ('operator@crowdnexis.local', '$2b$10$OXmeUzzzzzzzzzzzzzzzzzzzzzzzzzz', 'Operator User', 'OPERATOR')
 ON CONFLICT (email) DO NOTHING;
 
 -- Seed camera locations (Pune, India - realistic coordinates)

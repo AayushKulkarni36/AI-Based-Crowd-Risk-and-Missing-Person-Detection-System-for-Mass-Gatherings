@@ -1,4 +1,4 @@
-# CrowdSafe: AI-Based Crowd Risk & Missing Person Detection System
+# CrowdNexis AI: AI-Based Crowd Risk & Missing Person Detection System
 
 ![Status](https://img.shields.io/badge/Status-Production%20Ready-brightgreen)
 ![Version](https://img.shields.io/badge/Version-1.0.0-blue)
@@ -9,7 +9,7 @@
 
 ## 📋 Project Overview
 
-CrowdSafe is an AI-powered system that detects crowd density and identifies missing persons in video feeds. It combines real-time crowd analysis with facial recognition to provide actionable intelligence for public safety operations.
+CrowdNexis AI is an AI-powered system that detects crowd density and identifies missing persons in video feeds. It combines real-time crowd analysis with facial recognition to provide actionable intelligence for public safety operations.
 
 ### 🎯 Key Features
 

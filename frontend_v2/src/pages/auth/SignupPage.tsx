@@ -49,7 +49,7 @@ export function SignupPage() {
               </div>
             </div>
             <h1 className="text-3xl font-bold text-white mb-2">Create Account</h1>
-            <p className="text-slate-400">Join CrowdSafe today</p>
+            <p className="text-slate-400">Join CrowdNexis AI today</p>
           </div>
 
           {/* Error Alert */}

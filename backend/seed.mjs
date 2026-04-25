@@ -17,7 +17,7 @@ async function seed() {
     `INSERT INTO users (email, password_hash, name, full_name, role, is_active)
      VALUES ($1, $2, 'Admin User', 'Admin User', 'ADMIN', true)
      ON CONFLICT (email) DO NOTHING`,
-    ['admin@crowdsafe.com', hash]
+    ['admin@crowdnexis.ai', hash]
   );
   console.log('Admin user seeded:', r1.rowCount, 'row(s) inserted');
 

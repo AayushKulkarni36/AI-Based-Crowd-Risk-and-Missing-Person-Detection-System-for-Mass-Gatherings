@@ -1,6 +1,6 @@
 Write-Host ""
 Write-Host "========================================"
-Write-Host "  CrowdSafe - Project Startup"
+Write-Host "  CrowdNexis AI - Project Startup"
 Write-Host "========================================"
 Write-Host ""
 
@@ -67,7 +67,7 @@ Write-Host "  PostgreSQL:   localhost:5432 ✓"
 Write-Host "  Redis:        localhost:6379 ✓"
 Write-Host ""
 Write-Host "Demo Credentials:" -ForegroundColor Cyan
-Write-Host "  Email:    admin@crowdsafe.com"
+Write-Host "  Email:    admin@crowdnexis.ai"
 Write-Host "  Password: admin@123"
 Write-Host ""
 Write-Host "⚠️  Close any terminal window to stop that service"

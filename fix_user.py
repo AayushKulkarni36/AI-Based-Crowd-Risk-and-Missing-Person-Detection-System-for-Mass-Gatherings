@@ -10,11 +10,11 @@ conn = psycopg2.connect(
 )
 cursor = conn.cursor()
 
-cursor.execute("DELETE FROM users WHERE email = 'admin@crowdsafe.com'")
+cursor.execute("DELETE FROM users WHERE email = 'admin@crowdnexis.ai'")
 password_hash = bcrypt.hashpw(b'admin@123', bcrypt.gensalt(10)).decode('utf-8')
 cursor.execute(
     "INSERT INTO users (email, password_hash, name, role, is_active) VALUES (%s, %s, %s, %s, %s)",
-    ('admin@crowdsafe.com', password_hash, 'Admin User', 'ADMIN', True)
+    ('admin@crowdnexis.ai', password_hash, 'Admin User', 'ADMIN', True)
 )
 conn.commit()
 cursor.close()

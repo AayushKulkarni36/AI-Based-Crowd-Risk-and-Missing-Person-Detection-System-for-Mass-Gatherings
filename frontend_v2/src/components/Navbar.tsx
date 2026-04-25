@@ -36,7 +36,7 @@ export default function Navbar() {
                                 <Shield className="w-5 h-5 text-brand-surface" />
                             </div>
                             <span className="text-xl font-bold text-white tracking-tight">
-                                CrowdSafe
+                                CrowdNexis AI
                             </span>
                         </Link>
                     </div>

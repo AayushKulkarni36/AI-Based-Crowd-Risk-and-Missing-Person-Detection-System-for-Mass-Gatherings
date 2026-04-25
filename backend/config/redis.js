@@ -14,12 +14,20 @@ const redisConfig = {
   password: process.env.REDIS_PASSWORD || undefined,
   db: Number(process.env.REDIS_DB) || 0,
   retryStrategy: (times) => {
-    const delay = Math.min(times * 50, 2000);
+    if (times > 30) {
+      // After 30 retries (~1 min), slow down to every 10s
+      return 10000;
+    }
+    const delay = Math.min(times * 200, 5000);
     return delay;
   },
   enableReadyCheck: false,
   enableOfflineQueue: true,
-  maxRetriesPerRequest: null
+  maxRetriesPerRequest: null,
+  // ── Keep-alive to prevent idle disconnections ───────────────────────────
+  keepAlive: 30000,           // send TCP keep-alive every 30s
+  connectTimeout: 10000,      // 10s connection timeout
+  lazyConnect: false,
 };
 
 const redis = new Redis(redisConfig);
@@ -29,11 +37,18 @@ redis.on('connect', () => {
 });
 
 redis.on('error', (err) => {
-  console.error('❌ Redis error:', err);
+  // Only log unique/useful errors — avoid spam
+  if (err.code !== 'ECONNREFUSED') {
+    console.error('❌ Redis error:', err.message);
+  }
 });
 
 redis.on('close', () => {
-  console.log('⚠️  Redis disconnected');
+  console.log('⚠️  Redis disconnected — will reconnect automatically');
+});
+
+redis.on('reconnecting', (delay) => {
+  // Silently reconnecting
 });
 
 export default redis;

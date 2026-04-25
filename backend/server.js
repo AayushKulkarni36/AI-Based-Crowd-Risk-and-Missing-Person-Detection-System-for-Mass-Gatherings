@@ -36,8 +36,11 @@ app.use(helmet());
 
 const limiter = rateLimit({
   windowMs: 15 * 60 * 1000, // 15 minutes
-  max: 100, // limit each IP to 100 requests per windowMs
-  skip: (req) => req.path.startsWith('/api/video/results/'),
+  max: 600, // raised — dashboard polls stats every 30s
+  skip: (req) =>
+    req.path.startsWith('/api/video/results/') ||
+    req.path.startsWith('/api/stats/') ||
+    req.path === '/api/health',
   message: 'Too many requests from this IP, please try again later.'
 });
 
@@ -106,24 +109,24 @@ httpServer.listen(PORT, () => {
   logger.info(`📡 Socket.io listening on /events namespace`);
 });
 
+import pool from './config/db.js';
+
 // ============================================================================
 // GRACEFUL SHUTDOWN
 // ============================================================================
-process.on('SIGTERM', async () => {
-  logger.info('SIGTERM received, shutting down gracefully...');
-  httpServer.close(() => {
-    logger.info('✓ HTTP server closed');
+async function gracefulShutdown(signal) {
+  logger.info(`${signal} received, shutting down gracefully...`);
+  httpServer.close(async () => {
+    try { await pool.end(); } catch (_) {}
+    logger.info('✓ HTTP server and DB pool closed');
     process.exit(0);
   });
-});
+  // Force exit after 10s if graceful shutdown hangs
+  setTimeout(() => process.exit(1), 10000);
+}
 
-process.on('SIGINT', async () => {
-  logger.info('SIGINT received, shutting down gracefully...');
-  httpServer.close(() => {
-    logger.info('✓ HTTP server closed');
-    process.exit(0);
-  });
-});
+process.on('SIGTERM', () => gracefulShutdown('SIGTERM'));
+process.on('SIGINT', () => gracefulShutdown('SIGINT'));
 
 export { app, httpServer, io };
 

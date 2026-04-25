@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-CrowdSafe YOLOv8 Crowd Detection
+CrowdNexis AI YOLOv8 Crowd Detection
 Pipeline: video → detect → annotate → output video + JSON
 """
 import sys
@@ -274,7 +274,7 @@ def draw_detections(frame, boxes, person_count, risk_level, frame_num):
                 cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255, 255, 255), 2, cv2.LINE_AA)
 
     # ── Bottom bar: frame info ───────────────────────────────────────────
-    info_text = f"Frame: {frame_num}  |  CrowdSafe AI Detection"
+    info_text = f"Frame: {frame_num}  |  CrowdNexis AI Detection"
     cv2.rectangle(overlay, (0, h - 35), (w, h), (0, 0, 0), -1)
     cv2.putText(overlay, info_text, (10, h - 10),
                 cv2.FONT_HERSHEY_SIMPLEX, 0.5, (180, 180, 180), 1, cv2.LINE_AA)
