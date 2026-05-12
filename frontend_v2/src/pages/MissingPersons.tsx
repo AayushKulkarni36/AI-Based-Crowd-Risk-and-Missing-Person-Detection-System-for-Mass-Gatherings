@@ -1,5 +1,5 @@
 import { motion } from 'framer-motion';
-import { Plus, Search, CheckCircle2, Trash2, Brain, AlertCircle } from 'lucide-react';
+import { Plus, Search, CheckCircle2, Trash2, Brain, AlertCircle, Camera, X } from 'lucide-react';
 import { useState, useEffect, useCallback } from 'react';
 import { Card, Button, Modal } from '../components/ui/Common';
 import { useForm } from 'react-hook-form';
@@ -200,6 +200,7 @@ export default function MissingPersons() {
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [filterStatus, setFilterStatus] = useState<'all' | 'ACTIVE' | 'FOUND' | 'POSSIBLE_MATCH'>('all');
+  const [photoPreview, setPhotoPreview] = useState<string | null>(null);
 
   const {
     register,
@@ -255,6 +256,7 @@ export default function MissingPersons() {
       }
 
       setIsAddModalOpen(false);
+      setPhotoPreview(null);
       reset();
     } catch (err: any) {
       toast.error(err.message || 'Failed to create profile');
@@ -398,13 +400,44 @@ export default function MissingPersons() {
         </Card>
       )}
 
-      {/* Add Person Modal */}
       <Modal
         isOpen={isAddModalOpen}
-        onClose={() => { setIsAddModalOpen(false); reset(); }}
+        onClose={() => { setIsAddModalOpen(false); reset(); setPhotoPreview(null); }}
         title="Add Missing Person"
+        footer={
+          <div className="space-y-3">
+            {isSubmitting && (
+              <div className="flex items-center gap-2 text-blue-400 text-sm bg-blue-500/10 border border-blue-500/20 rounded-lg p-3">
+                <Brain className="w-4 h-4 animate-pulse" />
+                Running FaceNet enrollment — extracting 512-dim embedding from photo...
+              </div>
+            )}
+            <div className="flex gap-2">
+              <Button
+                type="button"
+                variant="secondary"
+                size="sm"
+                className="flex-1"
+                onClick={() => { setIsAddModalOpen(false); reset(); setPhotoPreview(null); }}
+              >
+                Cancel
+              </Button>
+              <Button
+                type="submit"
+                form="add-person-form"
+                variant="primary"
+                size="sm"
+                className="flex-1"
+                disabled={isSubmitting}
+              >
+                {isSubmitting ? 'Enrolling Face...' : 'Create Profile'}
+              </Button>
+            </div>
+          </div>
+        }
       >
-        <form onSubmit={handleSubmit(onSubmit)} className="space-y-4">
+        <form id="add-person-form" onSubmit={handleSubmit(onSubmit)} className="space-y-4">
+
           <div>
             <label className="block text-sm font-medium text-white mb-2">Full Name *</label>
             <input
@@ -446,11 +479,39 @@ export default function MissingPersons() {
             <label className="block text-sm font-medium text-white mb-2">
               Reference Photo * <span className="text-blue-400 text-xs">(Required for AI face matching)</span>
             </label>
+            {/* Photo Preview */}
+            {photoPreview && (
+              <div className="relative mb-3 inline-block">
+                <img
+                  src={photoPreview}
+                  alt="Preview"
+                  className="w-24 h-24 rounded-xl object-cover border-2 border-sky-500/40 shadow-lg"
+                />
+                <button
+                  type="button"
+                  onClick={() => { setPhotoPreview(null); }}
+                  className="absolute -top-2 -right-2 w-5 h-5 bg-red-500 rounded-full flex items-center justify-center hover:bg-red-600 transition-colors"
+                >
+                  <X className="w-3 h-3 text-white" />
+                </button>
+                <div className="absolute -bottom-1 -right-1 w-5 h-5 bg-emerald-500 rounded-full flex items-center justify-center">
+                  <Camera className="w-3 h-3 text-white" />
+                </div>
+              </div>
+            )}
             <input
               {...register('photo')}
               type="file"
               accept="image/*"
-              className="w-full px-3 py-2 bg-slate-800/50 border border-slate-700 rounded-lg text-white file:text-white file:bg-slate-700 file:border-0 file:rounded file:cursor-pointer focus:outline-none focus:border-brand-accent"
+              onChange={(e) => {
+                const file = e.target.files?.[0];
+                if (file) {
+                  const reader = new FileReader();
+                  reader.onload = (ev) => setPhotoPreview(ev.target?.result as string);
+                  reader.readAsDataURL(file);
+                }
+              }}
+              className="w-full px-3 py-2 bg-slate-800/50 border border-slate-700 rounded-lg text-white file:text-white file:bg-slate-700 file:border-0 file:rounded file:cursor-pointer file:px-3 file:py-1 file:mr-3 focus:outline-none focus:border-brand-accent"
             />
             {errors.photo && <p className="text-red-400 text-xs mt-1">{String(errors.photo.message)}</p>}
             <p className="text-xs text-slate-500 mt-1">
@@ -468,35 +529,9 @@ export default function MissingPersons() {
             />
           </div>
 
-          {isSubmitting && (
-            <div className="flex items-center gap-2 text-blue-400 text-sm bg-blue-500/10 border border-blue-500/20 rounded-lg p-3">
-              <Brain className="w-4 h-4 animate-pulse" />
-              Running FaceNet enrollment — extracting 512-dim embedding from photo...
-            </div>
-          )}
-
-          <div className="flex gap-2 pt-4">
-            <Button
-              type="button"
-              variant="secondary"
-              size="sm"
-              className="flex-1"
-              onClick={() => { setIsAddModalOpen(false); reset(); }}
-            >
-              Cancel
-            </Button>
-            <Button
-              type="submit"
-              variant="primary"
-              size="sm"
-              className="flex-1"
-              disabled={isSubmitting}
-            >
-              {isSubmitting ? 'Enrolling Face...' : 'Create Profile'}
-            </Button>
-          </div>
         </form>
       </Modal>
+
     </motion.div>
   );
 }

@@ -32,7 +32,21 @@ const PORT = process.env.PORT || 5000;
 // ============================================================================
 // SECURITY MIDDLEWARE
 // ============================================================================
-app.use(helmet());
+app.use(helmet({
+  contentSecurityPolicy: {
+    directives: {
+      defaultSrc: ["'self'"],
+      imgSrc: ["'self'", "data:", "blob:", "http://localhost:5000", "http://localhost:5173"],
+      mediaSrc: ["'self'", "http://localhost:5000"],
+      connectSrc: ["'self'", "http://localhost:5000", "ws://localhost:5000"],
+      scriptSrc: ["'self'", "'unsafe-inline'", "'unsafe-eval'"],
+      styleSrc: ["'self'", "'unsafe-inline'"],
+      fontSrc: ["'self'", "https://fonts.gstatic.com"],
+    },
+  },
+  crossOriginResourcePolicy: { policy: 'cross-origin' },
+}));
+
 
 const limiter = rateLimit({
   windowMs: 15 * 60 * 1000, // 15 minutes

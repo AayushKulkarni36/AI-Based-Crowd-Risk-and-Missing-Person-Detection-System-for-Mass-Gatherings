@@ -14,8 +14,13 @@ export interface VideoJobStatus {
     totalPeople?: number;
     avgPeoplePerFrame?: number;
     riskLevel?: string;
-    faceMatches?: number;
+    faceMatches?: any[];
     outputVideoPath?: string;
+    video_url?: string;
+    processingTimeSeconds?: number;
+    totalFrames?: number;
+    maxPeople?: number;
+    crowdHeatmapGrid?: any[];
   };
   uploadedAt?: string;
   processingStartedAt?: string;

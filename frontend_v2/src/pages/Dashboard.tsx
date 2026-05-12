@@ -1,5 +1,5 @@
 import { motion } from 'framer-motion';
-import { Users, Video, AlertTriangle, CheckCircle2, TrendingUp, Activity } from 'lucide-react';
+import { Users, Video, AlertTriangle, CheckCircle2, TrendingUp, Activity, Clock, Zap } from 'lucide-react';
 import { StatCard, RiskBadge } from '../components/ui/Cards';
 import { Card, Button, ProgressBar } from '../components/ui/Common';
 import { useSocket } from '../hooks/useSocket';
@@ -91,15 +91,11 @@ export default function Dashboard() {
   const fetchDetectionsChart = useCallback(async () => {
     try {
       const data = await api.getDetectionsAllTime();
-      console.log('[Dashboard] Raw API response:', JSON.stringify(data));
-
       const points = data.points || [];
       if (!points || points.length === 0) {
-        console.log('[Dashboard] No detection data from API — chart will show empty state');
         setChartData([]);
         return;
       }
-      
       const formattedPoints = points.map((p: DetectionPoint) => {
         const val = Number(p.value);
         return {
@@ -107,11 +103,9 @@ export default function Dashboard() {
           value: isNaN(val) ? 0 : val
         };
       });
-
-      console.log('[Dashboard] Formatted chart data:', JSON.stringify(formattedPoints));
       setChartData(formattedPoints);
     } catch (err) {
-      console.error('[Dashboard] Failed to fetch detections chart data:', err);
+      // non-blocking
     }
   }, []);
 
@@ -134,16 +128,35 @@ export default function Dashboard() {
   return (
     <motion.div className="space-y-8" variants={container} initial="hidden" animate="show">
       {/* Hero */}
-      <motion.div variants={item} className="text-center space-y-4 mb-8">
-        <h1 className="text-4xl font-bold text-white">Welcome back! 👋</h1>
-        <p className="text-slate-400 text-lg">
-          Real-time crowd risk detection &amp; missing person identification
-        </p>
-        <div className="flex items-center justify-center gap-2 mt-4">
-          <div className={cn('w-2 h-2 rounded-full animate-pulse', isConnected ? 'bg-emerald-500' : 'bg-red-500')} />
-          <span className="text-sm text-slate-400">
-            {isConnected ? 'System Online' : 'Connecting...'}
-          </span>
+      <motion.div variants={item} className="relative overflow-hidden rounded-2xl bg-gradient-to-r from-slate-900 via-slate-800 to-slate-900 border border-slate-700/50 p-8 mb-2">
+        {/* Animated background glow */}
+        <div className="absolute top-0 left-1/4 w-64 h-32 bg-sky-500/10 blur-3xl rounded-full" />
+        <div className="absolute bottom-0 right-1/4 w-48 h-24 bg-indigo-500/8 blur-3xl rounded-full" />
+        <div className="relative z-10 flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
+          <div>
+            <div className="flex items-center gap-3 mb-3">
+              <div className="w-10 h-10 bg-sky-500/20 border border-sky-500/30 rounded-xl flex items-center justify-center">
+                <Zap className="w-5 h-5 text-sky-400" />
+              </div>
+              <span className="text-sky-400 text-sm font-semibold tracking-widest uppercase">AI-Powered Surveillance</span>
+            </div>
+            <h1 className="text-3xl md:text-4xl font-bold text-white mb-2">
+              CrowdNexis <span className="text-sky-400">AI</span>
+            </h1>
+            <p className="text-slate-400 text-base max-w-xl">
+              Real-time crowd risk detection &amp; missing person identification using YOLOv8 + FaceNet
+            </p>
+          </div>
+          <div className="flex flex-col gap-2 text-sm shrink-0">
+            <div className={cn('flex items-center gap-2 px-3 py-1.5 rounded-full border', isConnected ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-400' : 'bg-red-500/10 border-red-500/30 text-red-400')}>
+              <div className={cn('w-2 h-2 rounded-full', isConnected ? 'bg-emerald-400 animate-pulse' : 'bg-red-400')} />
+              {isConnected ? 'System Online' : 'Connecting...'}
+            </div>
+            <div className="flex items-center gap-2 px-3 py-1.5 rounded-full border bg-slate-800/50 border-slate-700 text-slate-400">
+              <Clock className="w-3.5 h-3.5" />
+              Live Monitoring Active
+            </div>
+          </div>
         </div>
       </motion.div>
 

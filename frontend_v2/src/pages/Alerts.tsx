@@ -74,6 +74,27 @@ function AlertSkeleton() {
   );
 }
 
+function AlertImage({ src, alt }: { src: string; alt: string }) {
+  const [errored, setErrored] = useState(false);
+  if (errored) {
+    return (
+      <div className="w-16 h-16 rounded-md border border-amber-500/30 bg-amber-500/10 flex-shrink-0 flex flex-col items-center justify-center gap-1">
+        <span className="text-2xl">🔍</span>
+        <span className="text-[9px] text-amber-400 font-medium text-center leading-tight">detection<br/>snapshot</span>
+      </div>
+    );
+  }
+  return (
+    <img
+      src={src}
+      alt={alt}
+      crossOrigin="anonymous"
+      className="w-16 h-16 rounded-md object-cover border border-amber-500/30 flex-shrink-0 bg-slate-800"
+      onError={() => setErrored(true)}
+    />
+  );
+}
+
 export default function Alerts() {
   const { on, off } = useSocket();
   const [alerts, setAlerts] = useState<UIAlert[]>([]);
@@ -260,12 +281,9 @@ export default function Alerts() {
                     </div>
                   </div>
                   {alert.imagePath ? (
-                    <img
-                      src={`http://localhost:5000/${alert.imagePath}`}
-                      alt={alert.title}
-                      className="w-16 h-16 rounded-md object-cover border border-white/10 flex-shrink-0"
-                    />
+                    <AlertImage src={`http://localhost:5000/${alert.imagePath}`} alt={alert.title} />
                   ) : null}
+
                   <div className="flex-shrink-0 flex items-center gap-2">
                     {!alert.isRead && <div className="w-2 h-2 bg-brand-accent rounded-full" />}
                     <button

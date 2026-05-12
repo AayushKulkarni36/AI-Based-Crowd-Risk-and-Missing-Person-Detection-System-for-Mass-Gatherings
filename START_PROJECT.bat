@@ -188,13 +188,25 @@ start "CrowdNexis AI - Backend (Node)" /D "%PROJECT_ROOT%backend" cmd /k npm sta
 
 timeout /t 2 /nobreak >nul
 
+start "CrowdNexis AI - Python AI Service" cmd /k "cd /d "%PROJECT_ROOT%" && venv\Scripts\activate && cd src && python -m uvicorn face_recognition.face_api:app --reload --host 0.0.0.0 --port 8001"
+
+timeout /t 2 /nobreak >nul
+
 start "CrowdNexis AI - Frontend (Vite)" /D "%PROJECT_ROOT%frontend_v2" cmd /k npm run dev
 
 echo.
 echo ========================================
-echo   Started!
+echo   All 3 Services Started!
 echo ========================================
-echo Frontend: http://localhost:5173
-echo Backend : http://localhost:5000/api/health
+echo.
+echo   Frontend  : http://localhost:5173
+echo   Backend   : http://localhost:5000/api/health
+echo   Python AI : http://localhost:8001/docs
+echo.
+echo   Admin Login    : admin@crowdsafe.com  /  Admin@123
+echo   Operator Login : operator@crowdnexis.ai  /  operator123
+echo.
+echo   Close any terminal window to stop that service.
+echo ========================================
 echo.
 pause

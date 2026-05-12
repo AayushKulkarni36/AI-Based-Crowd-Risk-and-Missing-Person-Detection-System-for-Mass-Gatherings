@@ -178,7 +178,7 @@ async function _runPython(videoId, filePath) {
 
     if (outputVideoPath) {
       const filename = outputVideoPath.split('/').pop();
-      results.video_url = `http://localhost:5173/video/${filename}`;
+      results.video_url = `http://localhost:5000/video/${filename}`;
     }
 
     cacheSet(videoId, {
@@ -308,7 +308,7 @@ export async function getResults(req, res, next) {
 
           if (parsedResults && parsedResults.outputVideoPath) {
             const filename = parsedResults.outputVideoPath.split('/').pop();
-            parsedResults.video_url = `http://localhost:5173/video/${filename}`;
+            parsedResults.video_url = `http://localhost:5000/video/${filename}`;
           }
 
           // Sync cache
@@ -356,7 +356,7 @@ export async function getResults(req, res, next) {
 
     if (job.results && job.results.outputVideoPath && !job.results.video_url) {
       const filename = job.results.outputVideoPath.split('/').pop();
-      job.results.video_url = `http://localhost:5173/video/${filename}`;
+      job.results.video_url = `http://localhost:5000/video/${filename}`;
     }
 
     return res.json({
