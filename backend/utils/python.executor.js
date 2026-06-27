@@ -27,6 +27,7 @@ export function spawnPythonProcess(videoPath, onProgress = null) {
       '--skip', process.env.SKIP_FRAMES_CROWD || process.env.SKIP_FRAMES || '3',
       '--face-skip', process.env.SKIP_FRAMES_FACE || '3',
       '--face-threshold', process.env.MISSING_PERSON_THRESHOLD || '0.60',
+      '--match-threshold', process.env.MATCH_THRESHOLD || '0.65',
       '--face-cooldown', process.env.MISSING_PERSON_COOLDOWN_SECONDS || '5'
     ];
 
