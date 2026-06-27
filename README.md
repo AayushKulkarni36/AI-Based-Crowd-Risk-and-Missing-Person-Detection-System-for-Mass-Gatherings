@@ -3,141 +3,46 @@
 ![Status](https://img.shields.io/badge/Status-Production%20Ready-brightgreen)
 ![Version](https://img.shields.io/badge/Version-1.0.0-blue)
 ![License](https://img.shields.io/badge/License-MIT-green)
-![Python](https://img.shields.io/badge/Python-3.11+-blue.svg)
-![Node.js](https://img.shields.io/badge/Node.js-22+-green.svg)
-![PostgreSQL](https://img.shields.io/badge/PostgreSQL-15+-blue.svg)
 
-## 📋 Project Overview
+## Project Overview
 
 CrowdNexis AI is an AI-powered system that detects crowd density and identifies missing persons in video feeds. It combines real-time crowd analysis with facial recognition to provide actionable intelligence for public safety operations.
 
-### 🎯 Key Features
+### Key Features
 
-- **Real-Time Crowd Detection**: YOLOv8n-based person detection with risk level classification (Safe/Moderate/Risky/Critical)
-- **Face Recognition**: InsightFace-based facial embedding and matching against missing persons database
-- **Live Processing Dashboard**: Real-time job queue monitoring and results streaming via Socket.io
-- **Missing Persons Database**: Searchable repository of missing persons with photo and face embeddings
-- **Alert System**: Real-time alerts for crowd anomalies and face matches
-- **User Authentication**: JWT-based role-based access control (ADMIN/OPERATOR)
-- **REST API**: Comprehensive API for video upload, processing, and result retrieval
+- Real-Time Crowd Detection (YOLO)
+- Face Recognition (InsightFace embeddings)
+- Live Processing Dashboard with Socket.io
+- Missing Persons Database with embedding search
+- Alerting and role-based access control
+- REST API for uploads, processing, and retrieval
 
----
-
-## 🏗️ System Architecture
+## System Architecture
 
 ```
-┌──────────────────────────────────────────┐
-│   React Frontend (Port 5173)            │
-│ - Dashboard, Video Analysis, Alerts    │
-│ - Real-time Socket.io /events         │
-└─────────────┬──────────────────────────┘
-              │ HTTP + WebSocket
-              ↓
-┌──────────────────────────────────────────┐
-│   Node.js Backend (Port 5000)           │
-│ - Express REST API (/api/*)            │
-│ - Socket.io /events namespace          │
-│ - BullMQ job queue                     │
-└──┬─────────────────────────────┬────────┘
-   │                             │
-   ↓                             ↓
-┌─────────────────┐    ┌────────────────┐
-│  PostgreSQL 15  │    │  Redis 7       │
-│ (missing_persons)   │ (Job Queue)   │
-│ + pgvector ext  │    │               │
-└─────────────────┘    └────────────────┘
-   ↑
-   │ SQL queries
-   │
-┌──────────────────────────────────────────┐
-│   Python AI Engine (Port 8001)          │
-│ - YOLOv8n person detection             │
-│ - InsightFace embeddings               │
-│ - FAISS vector search                  │
-│ - Heatmap generation                   │
-└──────────────────────────────────────────┘
+Frontend (Vite + React) ---> Backend (Node.js + Express) ---> PostgreSQL + Redis
+                                   |
+                                   v
+                            Python AI Engine (YOLO, InsightFace, FAISS)
 ```
 
----
+## Tech Stack
 
-## 🗄️ Database Schema (PostgreSQL - "missing_persons")
+- Frontend: React, TypeScript, Vite, Tailwind
+- Backend: Node.js, Express, PostgreSQL (pgvector), Redis, BullMQ
+- Python AI: FastAPI, YOLO, InsightFace, FAISS, OpenCV
+- Infrastructure: Docker, Docker Compose
 
-**6 Core Tables:**
+## Prerequisites
 
-- **users** - User authentication & roles
-- **video_jobs** - Video processing tasks & results
-- **missing_persons** - Missing person registry with face embeddings
-- **detections** - Frame-level crowd detection results
-- **face_matches** - Matched faces from videos
-- **alert_logs** - Alert history & events
+- Node.js v18+
+- Python 3.9+
+- PostgreSQL 15+ with PostGIS
+- Git
 
-**Indexes:** pgvector IVFFlat on face_vector, b-tree on status/timestamps
+## Installation
 
----
-
-## 🔧 Technology Stack
-
-### Frontend
-React 18, TypeScript, Vite, Tailwind CSS, React Query, Socket.io-client, React Hook Form, Radix UI, Recharts, Framer Motion, Sonner
-
-### Backend
-Node.js v22, Express.js, PostgreSQL 15 + pgvector, Redis 7, BullMQ, Socket.io, JWT + bcrypt, Helmet, Winston
-
-### Python AI
-FastAPI, Uvicorn, YOLOv8n, InsightFace, FAISS, OpenCV, PyTorch 2.9, ONNX Runtime, asyncpg
-
-### Infrastructure
-Docker, Docker Compose, PostgreSQL 15, Redis 7
-
-### Languages
-- **Python 3.9+** - AI/ML processing
-- **JavaScript (ES6+)** - Frontend and backend
-
-##  System Architecture
-
-```
-┌─────────────────┐
-│   React Frontend │  (Port 5173)
-│   (Vite + Tailwind) │
-└────────┬────────┘
-         │ HTTP/REST API
-         ▼
-┌─────────────────┐
-│  Node.js Backend │  (Port 5000)
-│   (Express.js)   │
-└────────┬────────┘
-         │
-    ┌────┴────┐
-    │         │
-    ▼         ▼
-┌────────┐  ┌──────────────┐
-│PostgreSQL│  │ Python AI Engine │
-│ Database │  │  (YOLOv5 + CV)   │
-└────────┘  └──────────────┘
-```
-
-### Data Flow
-
-1. **Video Upload**: User uploads video through React frontend
-2. **Backend Processing**: Express server receives file and stores in `data/uploads/`
-3. **AI Analysis**: Python script processes video using YOLOv5 for person detection
-4. **Risk Assessment**: Crowd density calculated and risk level classified
-5. **Database Storage**: Results stored in PostgreSQL database
-6. **Visualization**: Frontend displays results with charts and statistics
-
-##  Prerequisites
-
-Before you begin, ensure you have the following installed:
-
-- **Node.js** v18 or higher ([Download](https://nodejs.org/))
-- **Python** 3.9 or higher ([Download](https://www.python.org/))
-- **PostgreSQL** 15 or higher with PostGIS extension ([Download](https://www.postgresql.org/download/))
-- **Git** ([Download](https://git-scm.com/))
-- **npm** or **yarn** (comes with Node.js)
-
-##  Installation
-
-### 1. Clone the Repository
+1. Clone the repository
 
 ```bash
 git clone https://github.com/AayushKulkarni36/AI-Based-Crowd-Risk-and-Missing-Person-Detection-System-for-Mass-Gatherings.git
@@ -231,7 +136,11 @@ DB_PASSWORD=your_actual_password
 PORT=5000
 ```
 
+<<<<<<< HEAD
 ** Important**: Never commit `.env` to version control. It contains sensitive credentials.
+=======
+**Important**: Never commit `.env` to version control. It contains sensitive credentials.
+>>>>>>> origin/main
 
 ### 7. Download YOLO Model (Optional)
 
@@ -242,7 +151,11 @@ The YOLOv5 model will be automatically downloaded on first use by the Ultralytic
 # Or place yolov5s.pt in models/yolo/ directory
 ```
 
+<<<<<<< HEAD
 ##  Running the Application
+=======
+## Running the Application
+>>>>>>> origin/main
 
 ### Start Backend Server
 
@@ -285,7 +198,11 @@ scripts\run_frontend.bat
 scripts\start_all.bat
 ```
 
+<<<<<<< HEAD
 ##  Project Structure
+=======
+## Project Structure
+>>>>>>> origin/main
 
 ```
 FinalYearProject/
@@ -338,8 +255,11 @@ FinalYearProject/
 ```
 
 ##  Features Implemented (Stage 1)
+<<<<<<< HEAD
 
 ###  Core Functionality
+=======
+>>>>>>> origin/main
 
 ###  Core Functionality
 - **Web Dashboard**: Professional dark-themed UI with navigation
@@ -375,15 +295,26 @@ FinalYearProject/
 - [ ] Historical data analysis
 - [ ] Export functionality (PDF/Excel reports)
 
+<<<<<<< HEAD
 *
 
+=======
+
+
+*Add other team members here*
+
+>>>>>>> origin/main
 ##  Documentation
 
 - **[Setup Guide](docs/SETUP.md)** - Detailed installation and configuration instructions
 - **[Collaboration Guide](docs/COLLABORATION.md)** - Git workflow and team collaboration
 - **[Team Setup](TEAM_SETUP.md)** - Quick onboarding guide for new team members
 
+<<<<<<< HEAD
 ##  Testing
+=======
+## Testing
+>>>>>>> origin/main
 
 ### Test Database Setup
 
@@ -429,11 +360,19 @@ curl http://localhost:5000/api/health
 
 For more detailed troubleshooting, see [docs/SETUP.md](docs/SETUP.md).
 
+<<<<<<< HEAD
 ## License
 
 This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
 
 ##  Contributing
+=======
+##  License
+
+This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
+
+## Contributing
+>>>>>>> origin/main
 
 1. Fork the repository
 2. Create a feature branch (`git checkout -b feature/AmazingFeature`)
@@ -443,6 +382,10 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 
 See [docs/COLLABORATION.md](docs/COLLABORATION.md) for detailed contribution guidelines.
 
+<<<<<<< HEAD
+=======
+##  Contact
+>>>>>>> origin/main
 
 
 ##  Acknowledgments
