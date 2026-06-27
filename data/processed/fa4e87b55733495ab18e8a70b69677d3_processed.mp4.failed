@@ -1,0 +1,3 @@
+column "found_timestamp" of relation "missing_persons" does not exist
+LINE 4:                         found_timestamp = NOW()
+                                ^

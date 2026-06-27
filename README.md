@@ -1,102 +1,48 @@
-# AI-Based Crowd Risk and Missing Person Detection System for Mass Gatherings
+# CrowdNexis AI: AI-Based Crowd Risk & Missing Person Detection System
 
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
-[![Python](https://img.shields.io/badge/Python-3.9+-blue.svg)](https://www.python.org/)
-[![Node.js](https://img.shields.io/badge/Node.js-18+-green.svg)](https://nodejs.org/)
-[![PostgreSQL](https://img.shields.io/badge/PostgreSQL-15+-blue.svg)](https://www.postgresql.org/)
-
-A comprehensive AI-powered system for real-time crowd monitoring, risk assessment, and missing person detection in mass gathering scenarios. Built with modern web technologies and state-of-the-art computer vision models.
+![Status](https://img.shields.io/badge/Status-Production%20Ready-brightgreen)
+![Version](https://img.shields.io/badge/Version-1.0.0-blue)
+![License](https://img.shields.io/badge/License-MIT-green)
 
 ## Project Overview
 
-This system provides intelligent crowd analysis using YOLOv5 object detection to identify and count people in video feeds, assess crowd density risks, and maintain a registry for missing person cases. The platform features a professional web dashboard for real-time monitoring, video analysis, and data visualization.
+CrowdNexis AI is an AI-powered system that detects crowd density and identifies missing persons in video feeds. It combines real-time crowd analysis with facial recognition to provide actionable intelligence for public safety operations.
 
 ### Key Features
 
-- **Real-Time Crowd Detection**: YOLOv5-based person detection with high accuracy
-- **Risk Assessment**: Automatic classification of crowd density (Safe/Moderate/Risky/Critical)
-- **Video Analysis**: Upload and process video files for crowd analysis
-- **Missing Person Registry**: Database management for missing person cases
-- **Analytics Dashboard**: Comprehensive statistics and data visualization
-- **Professional UI**: Modern dark-themed React interface with Tailwind CSS
-- **RESTful API**: Node.js/Express backend with PostgreSQL database
+- Real-Time Crowd Detection (YOLO)
+- Face Recognition (InsightFace embeddings)
+- Live Processing Dashboard with Socket.io
+- Missing Persons Database with embedding search
+- Alerting and role-based access control
+- REST API for uploads, processing, and retrieval
 
-##  Tech Stack
-
-### Frontend
-- **React 18** - Modern UI framework
-- **Vite** - Fast build tool and dev server
-- **Tailwind CSS** - Utility-first CSS framework
-- **Recharts** - Data visualization library
-- **React Router** - Client-side routing
-- **Axios** - HTTP client
-
-### Backend
-- **Node.js** - JavaScript runtime
-- **Express.js** - Web application framework
-- **PostgreSQL** - Relational database with PostGIS extension
-- **Multer** - File upload handling
-- **pg** - PostgreSQL client
-
-### AI/ML
-- **YOLOv5 (Ultralytics)** - Object detection model
-- **OpenCV** - Computer vision library
-- **PyTorch** - Deep learning framework
-- **NumPy** - Numerical computing
-
-### Database
-- **PostgreSQL 15+** - Primary database
-- **PostGIS** - Spatial database extension
-
-### Languages
-- **Python 3.9+** - AI/ML processing
-- **JavaScript (ES6+)** - Frontend and backend
-
-##  System Architecture
+## System Architecture
 
 ```
-┌─────────────────┐
-│   React Frontend │  (Port 5173)
-│   (Vite + Tailwind) │
-└────────┬────────┘
-         │ HTTP/REST API
-         ▼
-┌─────────────────┐
-│  Node.js Backend │  (Port 5000)
-│   (Express.js)   │
-└────────┬────────┘
-         │
-    ┌────┴────┐
-    │         │
-    ▼         ▼
-┌────────┐  ┌──────────────┐
-│PostgreSQL│  │ Python AI Engine │
-│ Database │  │  (YOLOv5 + CV)   │
-└────────┘  └──────────────┘
+Frontend (Vite + React) ---> Backend (Node.js + Express) ---> PostgreSQL + Redis
+                                   |
+                                   v
+                            Python AI Engine (YOLO, InsightFace, FAISS)
 ```
 
-### Data Flow
+## Tech Stack
 
-1. **Video Upload**: User uploads video through React frontend
-2. **Backend Processing**: Express server receives file and stores in `data/uploads/`
-3. **AI Analysis**: Python script processes video using YOLOv5 for person detection
-4. **Risk Assessment**: Crowd density calculated and risk level classified
-5. **Database Storage**: Results stored in PostgreSQL database
-6. **Visualization**: Frontend displays results with charts and statistics
+- Frontend: React, TypeScript, Vite, Tailwind
+- Backend: Node.js, Express, PostgreSQL (pgvector), Redis, BullMQ
+- Python AI: FastAPI, YOLO, InsightFace, FAISS, OpenCV
+- Infrastructure: Docker, Docker Compose
 
 ## Prerequisites
 
-Before you begin, ensure you have the following installed:
+- Node.js v18+
+- Python 3.9+
+- PostgreSQL 15+ with PostGIS
+- Git
 
-- **Node.js** v18 or higher ([Download](https://nodejs.org/))
-- **Python** 3.9 or higher ([Download](https://www.python.org/))
-- **PostgreSQL** 15 or higher with PostGIS extension ([Download](https://www.postgresql.org/download/))
-- **Git** ([Download](https://git-scm.com/))
-- **npm** or **yarn** (comes with Node.js)
+## Installation
 
-##  Installation
-
-### 1. Clone the Repository
+1. Clone the repository
 
 ```bash
 git clone https://github.com/AayushKulkarni36/AI-Based-Crowd-Risk-and-Missing-Person-Detection-System-for-Mass-Gatherings.git
@@ -190,7 +136,11 @@ DB_PASSWORD=your_actual_password
 PORT=5000
 ```
 
+<<<<<<< HEAD
+** Important**: Never commit `.env` to version control. It contains sensitive credentials.
+=======
 **Important**: Never commit `.env` to version control. It contains sensitive credentials.
+>>>>>>> origin/main
 
 ### 7. Download YOLO Model (Optional)
 
@@ -201,7 +151,11 @@ The YOLOv5 model will be automatically downloaded on first use by the Ultralytic
 # Or place yolov5s.pt in models/yolo/ directory
 ```
 
+<<<<<<< HEAD
+##  Running the Application
+=======
 ## Running the Application
+>>>>>>> origin/main
 
 ### Start Backend Server
 
@@ -244,7 +198,11 @@ scripts\run_frontend.bat
 scripts\start_all.bat
 ```
 
+<<<<<<< HEAD
+##  Project Structure
+=======
 ## Project Structure
+>>>>>>> origin/main
 
 ```
 FinalYearProject/
@@ -297,6 +255,11 @@ FinalYearProject/
 ```
 
 ##  Features Implemented (Stage 1)
+<<<<<<< HEAD
+
+###  Core Functionality
+=======
+>>>>>>> origin/main
 
 ###  Core Functionality
 - **Web Dashboard**: Professional dark-themed UI with navigation
@@ -332,17 +295,26 @@ FinalYearProject/
 - [ ] Historical data analysis
 - [ ] Export functionality (PDF/Excel reports)
 
+<<<<<<< HEAD
+*
+
+=======
 
 
 *Add other team members here*
 
+>>>>>>> origin/main
 ##  Documentation
 
 - **[Setup Guide](docs/SETUP.md)** - Detailed installation and configuration instructions
 - **[Collaboration Guide](docs/COLLABORATION.md)** - Git workflow and team collaboration
 - **[Team Setup](TEAM_SETUP.md)** - Quick onboarding guide for new team members
 
+<<<<<<< HEAD
+##  Testing
+=======
 ## Testing
+>>>>>>> origin/main
 
 ### Test Database Setup
 
@@ -388,11 +360,19 @@ curl http://localhost:5000/api/health
 
 For more detailed troubleshooting, see [docs/SETUP.md](docs/SETUP.md).
 
+<<<<<<< HEAD
+## License
+
+This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
+
+##  Contributing
+=======
 ##  License
 
 This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
 
 ## Contributing
+>>>>>>> origin/main
 
 1. Fork the repository
 2. Create a feature branch (`git checkout -b feature/AmazingFeature`)
@@ -402,11 +382,11 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 
 See [docs/COLLABORATION.md](docs/COLLABORATION.md) for detailed contribution guidelines.
 
+<<<<<<< HEAD
+=======
 ##  Contact
+>>>>>>> origin/main
 
-For questions, issues, or contributions, please:
-- Open an issue on GitHub
-- Contact the project maintainer
 
 ##  Acknowledgments
 

@@ -1,0 +1,110 @@
+body {
+  margin: 0;
+  font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  background: #0b1020;
+  color: #f5f5f5;
+}
+
+.container {
+  max-width: 960px;
+  margin: 24px auto;
+  padding: 16px;
+}
+
+h1 {
+  margin-bottom: 4px;
+}
+
+.subtitle {
+  margin-top: 0;
+  color: #c3c7e6;
+}
+
+.panel {
+  background: #151a2b;
+  border-radius: 8px;
+  padding: 16px 20px 20px;
+  margin-top: 16px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
+}
+
+.panel h2 {
+  margin-top: 0;
+}
+
+.field {
+  margin-bottom: 10px;
+  display: flex;
+  flex-direction: column;
+}
+
+.field-group {
+  display: flex;
+  gap: 12px;
+}
+
+label {
+  font-size: 0.9rem;
+  margin-bottom: 4px;
+}
+
+input[type="text"],
+input[type="number"],
+textarea {
+  padding: 6px 8px;
+  border-radius: 4px;
+  border: 1px solid #343a5a;
+  background: #0f1324;
+  color: #f5f5f5;
+}
+
+input[type="file"] {
+  color: #f5f5f5;
+}
+
+button {
+  margin-top: 8px;
+  padding: 8px 14px;
+  border-radius: 4px;
+  border: none;
+  background: #2563eb;
+  color: white;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+button:hover {
+  background: #1d4ed8;
+}
+
+.status {
+  margin-top: 6px;
+  font-size: 0.9rem;
+}
+
+.status.success {
+  color: #4ade80;
+}
+
+.status.error {
+  color: #f97373;
+}
+
+.video-output {
+  margin-top: 12px;
+}
+
+.video-output video {
+  width: 100%;
+  max-height: 480px;
+  background: black;
+}
+
+.note {
+  font-size: 0.85rem;
+  color: #c3c7e6;
+}
+
+.hidden {
+  display: none;
+}
