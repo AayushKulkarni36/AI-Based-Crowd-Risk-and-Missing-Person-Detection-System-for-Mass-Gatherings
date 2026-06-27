@@ -1,21 +1,26 @@
 import { motion } from 'framer-motion';
-import { Users, Video, AlertTriangle, CheckCircle2, TrendingUp, Activity, Clock, Zap } from 'lucide-react';
+import { Users, Video, AlertTriangle, CheckCircle2, TrendingUp, Activity, Clock, Zap, MapPin, ShieldAlert, BarChart3 } from 'lucide-react';
 import { StatCard, RiskBadge } from '../components/ui/Cards';
-import { Card, Button, ProgressBar } from '../components/ui/Common';
+import { Card, Button } from '../components/ui/Common';
 import { useSocket } from '../hooks/useSocket';
 import { useState, useEffect, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
+import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell } from 'recharts';
 import { cn } from '../lib/utils';
-import { api, StatsOverview, AlertLog, DetectionPoint } from '../services/api';
+import { api, StatsOverview, AlertLog, MissingPerson } from '../services/api';
 import { toast } from 'sonner';
 
-interface ChartData { time: string; value: number; }
+interface RiskChartData { level: string; count: number; color: string; }
 
 const container = { hidden: { opacity: 0 }, show: { opacity: 1, transition: { staggerChildren: 0.1 } } };
 const item = { hidden: { y: 20, opacity: 0 }, show: { y: 0, opacity: 1 } };
 
-const CHART_PLACEHOLDER: ChartData[] = [];
+const RISK_COLORS: Record<string, string> = {
+  CRITICAL: '#ef4444',
+  RISKY:    '#f97316',
+  MODERATE: '#eab308',
+  SAFE:     '#22c55e',
+};
 
 function StatSkeleton() {
   return (
@@ -59,12 +64,14 @@ function formatRelativeTime(isoString: string): string {
 
 export default function Dashboard() {
   const navigate = useNavigate();
-  const { isConnected, queueStats } = useSocket();
+  const { isConnected } = useSocket();
   const [stats, setStats] = useState<StatsOverview | null>(null);
   const [alerts, setAlerts] = useState<AlertLog[]>([]);
+  const [activePersons, setActivePersons] = useState<MissingPerson[]>([]);
+  const [riskChart, setRiskChart] = useState<RiskChartData[]>([]);
   const [statsLoading, setStatsLoading] = useState(true);
   const [alertsLoading, setAlertsLoading] = useState(true);
-  const [chartData, setChartData] = useState<ChartData[]>(CHART_PLACEHOLDER);
+  const [personsLoading, setPersonsLoading] = useState(true);
 
   const fetchStats = useCallback(async () => {
     try {
@@ -88,42 +95,52 @@ export default function Dashboard() {
     }
   }, []);
 
-  const fetchDetectionsChart = useCallback(async () => {
+  const fetchPersonsAndRisk = useCallback(async () => {
     try {
-      const data = await api.getDetectionsAllTime();
-      const points = data.points || [];
-      if (!points || points.length === 0) {
-        setChartData([]);
-        return;
-      }
-      const formattedPoints = points.map((p: DetectionPoint) => {
-        const val = Number(p.value);
-        return {
-          time: p.time || 'Unknown',
-          value: isNaN(val) ? 0 : val
-        };
+      const [personsData, alertsData] = await Promise.all([
+        api.getMissingPersons(),
+        api.getAlerts(),
+      ]);
+      // Active persons panel
+      const active = (personsData.persons || []).filter(p => p.status === 'ACTIVE');
+      setActivePersons(active);
+
+      // Build risk distribution from all alerts
+      const counts: Record<string, number> = { CRITICAL: 0, RISKY: 0, MODERATE: 0, SAFE: 0 };
+      (alertsData.alerts || []).forEach(a => {
+        const lvl = a.risk_level?.toUpperCase();
+        if (lvl in counts) counts[lvl]++;
       });
-      setChartData(formattedPoints);
-    } catch (err) {
+      setRiskChart(
+        Object.entries(counts)
+          .filter(([, v]) => v > 0)
+          .map(([level, count]) => ({ level, count, color: RISK_COLORS[level] }))
+          .sort((a, b) => {
+            const order = ['CRITICAL','RISKY','MODERATE','SAFE'];
+            return order.indexOf(a.level) - order.indexOf(b.level);
+          })
+      );
+    } catch {
       // non-blocking
+    } finally {
+      setPersonsLoading(false);
     }
   }, []);
 
   useEffect(() => {
     fetchStats();
     fetchAlerts();
-    fetchDetectionsChart();
-  }, [fetchStats, fetchAlerts, fetchDetectionsChart]);
+    fetchPersonsAndRisk();
+  }, [fetchStats, fetchAlerts, fetchPersonsAndRisk]);
 
   useEffect(() => {
-    // Keep dashboard counters fresh after background face-match updates.
     const interval = setInterval(() => {
       fetchStats();
       fetchAlerts();
-      fetchDetectionsChart();
+      fetchPersonsAndRisk();
     }, 30000);
     return () => clearInterval(interval);
-  }, [fetchStats, fetchAlerts, fetchDetectionsChart]);
+  }, [fetchStats, fetchAlerts, fetchPersonsAndRisk]);
 
   return (
     <motion.div className="space-y-8" variants={container} initial="hidden" animate="show">
@@ -171,65 +188,136 @@ export default function Dashboard() {
             <StatCard icon={<AlertTriangle />} label="Critical Alerts Today" value={stats?.criticalAlertsToday ?? 0} color="red" />
             <StatCard icon={<CheckCircle2 />} label="Found Persons" value={stats?.foundPersons ?? 0} color="emerald" />
             <StatCard icon={<TrendingUp />} label="Total Face Matches" value={stats?.totalFaceMatches ?? 0} color="secondary" />
-            <StatCard icon={<Activity />} label="Queue Status" value={isNaN(queueStats.waiting + queueStats.active) ? 0 : queueStats.waiting + queueStats.active} color="primary" />
+            <StatCard icon={<Activity />} label="Total People Detected" value={stats?.totalPeopleDetected ?? 0} color="primary" />
           </>
         )}
       </motion.div>
 
-      {/* Queue & Chart */}
+      {/* Active Cases + Risk Distribution */}
       <motion.div variants={item} className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+
+        {/* Active Missing Persons Panel */}
         <Card>
-          <h3 className="text-xl font-bold text-white mb-6">Processing Queue</h3>
-          <div className="space-y-4">
-            <div>
-              <div className="flex justify-between items-center mb-2">
-                <span className="text-slate-400 text-sm">Active Jobs</span>
-                <span className="text-white font-semibold">{queueStats.active}</span>
+          <div className="flex items-center justify-between mb-5">
+            <div className="flex items-center gap-2">
+              <div className="w-8 h-8 bg-amber-500/15 border border-amber-500/30 rounded-lg flex items-center justify-center">
+                <ShieldAlert className="w-4 h-4 text-amber-400" />
               </div>
-              <ProgressBar value={queueStats.active} max={5} color="primary" />
+              <h3 className="text-lg font-bold text-white">Active Missing Cases</h3>
             </div>
-            <div>
-              <div className="flex justify-between items-center mb-2">
-                <span className="text-slate-400 text-sm">Waiting Jobs</span>
-                <span className="text-white font-semibold">{queueStats.waiting}</span>
-              </div>
-              <ProgressBar value={queueStats.waiting} max={20} color="warning" />
+            <span className="text-xs font-semibold px-2 py-1 rounded-full bg-amber-500/15 border border-amber-500/30 text-amber-400">
+              {activePersons.length} ACTIVE
+            </span>
+          </div>
+
+          {personsLoading ? (
+            <div className="space-y-3">
+              {Array.from({ length: 4 }).map((_, i) => (
+                <div key={i} className="flex items-center gap-3 p-3 bg-slate-800/40 rounded-lg animate-pulse">
+                  <div className="w-9 h-9 rounded-full bg-slate-700 flex-shrink-0" />
+                  <div className="flex-1 space-y-2">
+                    <div className="h-3 bg-slate-700 rounded w-1/2" />
+                    <div className="h-2 bg-slate-700 rounded w-1/3" />
+                  </div>
+                </div>
+              ))}
             </div>
-            <div className="pt-4 border-t border-slate-700">
-              <p className="text-slate-400 text-sm">Completed: <span className="text-white font-semibold">{queueStats.completed}</span></p>
-              <p className="text-slate-400 text-sm">Failed: <span className="text-white font-semibold">{queueStats.failed}</span></p>
+          ) : activePersons.length === 0 ? (
+            <div className="flex flex-col items-center justify-center py-10 text-center">
+              <CheckCircle2 className="w-10 h-10 text-emerald-500/40 mb-3" />
+              <p className="text-slate-400 text-sm">No active missing person cases</p>
             </div>
+          ) : (
+            <div className="space-y-2 max-h-[280px] overflow-y-auto pr-1">
+              {activePersons.map((person, idx) => (
+                <motion.div
+                  key={person.id}
+                  initial={{ opacity: 0, x: -10 }}
+                  animate={{ opacity: 1, x: 0 }}
+                  transition={{ delay: idx * 0.05 }}
+                  className="flex items-center gap-3 p-3 bg-slate-800/40 hover:bg-slate-800/70 border border-slate-700/40 hover:border-amber-500/30 rounded-lg cursor-pointer transition-all"
+                  onClick={() => navigate('/missing-persons')}
+                >
+                  {/* Avatar */}
+                  <div className={cn(
+                    'w-9 h-9 rounded-full flex items-center justify-center flex-shrink-0 text-sm font-bold',
+                    person.gender?.toLowerCase() === 'female'
+                      ? 'bg-pink-500/20 text-pink-400 border border-pink-500/30'
+                      : 'bg-sky-500/20 text-sky-400 border border-sky-500/30'
+                  )}>
+                    {person.name.charAt(0).toUpperCase()}
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <p className="text-white font-semibold text-sm truncate">{person.name}</p>
+                    <div className="flex items-center gap-2 mt-0.5">
+                      <span className="text-slate-400 text-xs">{person.age}y • {person.gender}</span>
+                      {person.last_seen_location && (
+                        <span className="flex items-center gap-0.5 text-slate-500 text-xs">
+                          <MapPin className="w-2.5 h-2.5" />
+                          {person.last_seen_location}
+                        </span>
+                      )}
+                    </div>
+                  </div>
+                  <div className="text-right flex-shrink-0">
+                    <span className="text-xs px-2 py-0.5 rounded-full bg-amber-500/15 text-amber-400 border border-amber-500/25 font-medium">ACTIVE</span>
+                    <p className="text-slate-500 text-xs mt-1">{formatRelativeTime(person.reported_date)}</p>
+                  </div>
+                </motion.div>
+              ))}
+            </div>
+          )}
+
+          <div className="mt-4 pt-4 border-t border-slate-700/50">
+            <Button variant="ghost" size="sm" type="button" className="w-full" onClick={() => navigate('/missing-persons')}>
+              <Users className="w-4 h-4 mr-2" /> View All Missing Persons
+            </Button>
           </div>
         </Card>
 
+        {/* Alert Risk Distribution */}
         <Card>
-          <h3 className="text-xl font-bold text-white mb-6">All-Time Detections</h3>
-          {chartData.length === 0 ? (
-            <div className="flex items-center justify-center h-[200px]">
-              <div className="text-center">
-                <Activity className="w-10 h-10 text-slate-600 mx-auto mb-3 opacity-50" />
-                <p className="text-slate-500 text-sm">No detection data yet. Process a video to see trends.</p>
-              </div>
+          <div className="flex items-center gap-2 mb-5">
+            <div className="w-8 h-8 bg-sky-500/15 border border-sky-500/30 rounded-lg flex items-center justify-center">
+              <BarChart3 className="w-4 h-4 text-sky-400" />
+            </div>
+            <h3 className="text-lg font-bold text-white">Alert Risk Distribution</h3>
+          </div>
+
+          {riskChart.length === 0 ? (
+            <div className="flex flex-col items-center justify-center h-[220px] text-center">
+              <Activity className="w-10 h-10 text-slate-600 mx-auto mb-3 opacity-40" />
+              <p className="text-slate-500 text-sm">No alert data yet. Process a video to see distribution.</p>
             </div>
           ) : (
-            <ResponsiveContainer width="100%" height={200}>
-              <LineChart data={chartData} margin={{ top: 10, right: 20, left: 0, bottom: 10 }}>
-                <CartesianGrid strokeDasharray="3 3" stroke="#334155" vertical={false} />
-                <XAxis dataKey="time" stroke="#cbd5e1" tickMargin={10} />
-                <YAxis stroke="#cbd5e1" allowDecimals={false} domain={[0, 'dataMax + 5']} />
-                <Tooltip contentStyle={{ backgroundColor: '#1e293b', border: '1px solid #475569', borderRadius: '8px', color: '#fff' }} />
-                <Line 
-                  isAnimationActive={false}
-                  type="monotone" 
-                  dataKey="value" 
-                  stroke="#38bdf8" 
-                  strokeWidth={3} 
-                  dot={{ fill: '#38bdf8', r: 5, strokeWidth: 2, stroke: '#0f172a' }} 
-                  activeDot={{ r: 8, stroke: '#fff', strokeWidth: 2 }}
-                  connectNulls={true}
-                />
-              </LineChart>
-            </ResponsiveContainer>
+            <>
+              <ResponsiveContainer width="100%" height={200}>
+                <BarChart data={riskChart} margin={{ top: 5, right: 10, left: -20, bottom: 5 }} barSize={36}>
+                  <CartesianGrid strokeDasharray="3 3" stroke="#1e293b" vertical={false} />
+                  <XAxis dataKey="level" stroke="#64748b" tick={{ fontSize: 11 }} />
+                  <YAxis stroke="#64748b" allowDecimals={false} tick={{ fontSize: 11 }} />
+                  <Tooltip
+                    cursor={{ fill: 'rgba(255,255,255,0.04)' }}
+                    contentStyle={{ backgroundColor: '#1e293b', border: '1px solid #334155', borderRadius: '8px', color: '#fff', fontSize: '13px' }}
+                    formatter={(v: any) => [`${v} alerts`, 'Count']}
+                  />
+                  <Bar dataKey="count" radius={[6, 6, 0, 0]}>
+                    {riskChart.map((entry) => (
+                      <Cell key={entry.level} fill={entry.color} fillOpacity={0.85} />
+                    ))}
+                  </Bar>
+                </BarChart>
+              </ResponsiveContainer>
+              {/* Legend chips */}
+              <div className="flex flex-wrap gap-2 mt-3">
+                {riskChart.map(({ level, count, color }) => (
+                  <div key={level} className="flex items-center gap-1.5 text-xs text-slate-400">
+                    <span className="w-2.5 h-2.5 rounded-sm" style={{ backgroundColor: color }} />
+                    {level}: <span className="text-white font-semibold">{count}</span>
+                  </div>
+                ))}
+              </div>
+            </>
           )}
         </Card>
       </motion.div>
